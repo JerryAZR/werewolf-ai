@@ -271,7 +271,7 @@ class Banishment(GameEvent):
     phase: Phase = Phase.DAY
     micro_phase: MicroPhase = MicroPhase.VOTING
     votes: dict[int, float] = Field(default_factory=dict)  # target -> vote count
-    tied_players: list[int] = Field(default_factory=list)  # Empty if no tie
+    tied_players: list[int] = Field(default_factory=list)  # Empty if no tie; if non-empty, no banishment occurs
     banished: Optional[int] = None
 
     def __str__(self) -> str:
