@@ -55,7 +55,7 @@ class PhaseContext(BaseModel):
 
     # Current phase identification
     phase: Phase  # NIGHT, DAY, or GAME_OVER
-    micro_phase: MicroPhase  # Specific subphase
+    sub_phase: SubPhase  # Specific subphase
 
     # Game state
     day: int
@@ -79,25 +79,16 @@ class PhaseContext(BaseModel):
 ### Output: HandlerResult
 
 ```python
+from .event_log import SubPhaseLog
+
 class HandlerResult(BaseModel):
-    """Standard output from handlers."""
+    """Output from handlers."""
 
-    # Primary output
-    event: Optional[GameEvent] = None
-
-    # Next actor for multi-actor phases
-    next_actor: Optional[int] = None
-
-    # State mutations (applied by engine after validation)
-    state_mutations: dict[str, Any] = Field(default_factory=dict)
-
-    # Skip this phase entirely
-    was_skipped: bool = False
-    skip_reason: Optional[str] = None
-
-    # Debug info
+    subphase_log: SubPhaseLog  # All events from this subphase
     debug_info: Optional[str] = None
 ```
+
+Handler manages the entire subphase and returns all events wrapped in a SubPhaseLog. Engine adds the SubPhaseLog to the current PhaseLog and determines the next subphase based on prescribed order.
 
 ---
 
@@ -105,29 +96,72 @@ class HandlerResult(BaseModel):
 
 ### Night Subphases
 
-| SubPhase | Input Context | Output Event | Next Phase |
-|----------|---------------|--------------|------------|
-| **WerewolfAction** | Any werewolf | `WerewolfKill` | WitchAction |
-| **WitchAction** | Witch, `night_actions.kill_target` | `WitchAction` | GuardAction |
-| **GuardAction** | Guard, `night_actions` | `GuardAction` | SeerAction |
-| **SeerAction** | Seer | `SeerAction` | NightResolution |
-| **NightResolution** | All night actions | `NightResolution` | VictoryCheck or Day |
+| SubPhase | Input Context | Output Event |
+|----------|---------------|--------------|
+| **WerewolfAction** | Any werewolf seat | `WerewolfKill` |
+| **WitchAction** | Witch, `night_actions.kill_target`, `night_actions.antidote_used`, `night_actions.poison_used` | `WitchAction` |
+| **GuardAction** | Guard, `night_actions.guard_prev_target` | `GuardAction` |
+| **SeerAction** | Seer seat | `SeerAction` |
+| **NightResolution** | All `night_actions` fields | `NightOutcome` |
 
-### Day Subphases
+**Night Phase Flow:** WerewolfAction -> WitchAction -> GuardAction -> SeerAction -> NightResolution
 
-| SubPhase | Input Context | Output Event | Next Phase |
-|----------|---------------|--------------|------------|
-| **Campaign** | Candidate | `Speech` | Next candidate or OptOut |
-| **OptOut** | Candidate | `SheriffOptOut` | Next candidate or SheriffElection |
-| **SheriffElection** | All `living_players` | `SheriffElection` | DeathAnnouncement |
-| **DeathAnnouncement** | Dead players from night | `DeathAnnouncement` | VictoryCheck or LastWords or Discussion |
-| **LastWords** | Dead player | `Speech` | Next dead or Discussion |
-| **Discussion** | Speaker | `Speech` | Next speaker or Voting |
-| **Voting** | Voter | `Vote` | Next voter or BanishedLastWords |
-| **BanishedLastWords** | Banished player | `Speech` | VictoryCheck |
-| **VictoryCheck** | Full state | `VictoryCheck` | GAME_OVER or Next Phase |
-| **HunterShoot** | Hunter | `HunterShoot` | BadgeTransfer or Next |
-| **BadgeTransfer** | Sheriff info | `SheriffBadgeTransfer` | VictoryCheck or Next |
+### Day Subphases (Day 1)
+
+| SubPhase | Input Context | Output Event |
+|----------|---------------|--------------|
+| **Campaign** | Candidate seat | `Speech` |
+| **OptOut** | Candidate seat | `SheriffOptOut` |
+| **SheriffElection** | All `living_players` | `SheriffOutcome` |
+| **DeathResolution** | Deaths from night | `DeathEvent` |
+| **Discussion** | Speaker seat | `Speech` |
+| **Voting** | Voter seat | `Vote` |
+
+**Day 1 Flow:** Campaign -> OptOut -> SheriffElection -> DeathResolution -> Discussion -> Voting
+
+### Day Subphases (Day 2+)
+
+| SubPhase | Input Context | Output Event |
+|----------|---------------|--------------|
+| **DeathResolution** | Deaths from night | `DeathEvent` |
+| **Discussion** | Speaker seat | `Speech` |
+| **Voting** | Voter seat | `Vote` |
+
+**Day 2+ Flow:** DeathResolution -> Discussion -> Voting
+
+### DeathResolution Phase
+
+The `DeathResolution` phase handles all deaths and their triggered events.
+
+**Input:**
+
+```
+- deaths: List of dead player seats from night
+- players: Full state with roles
+```
+
+**Output:**
+
+```python
+DeathEvent(
+    actor=int,  # Dead player's seat
+    cause=DeathCause,
+    last_words=str | None,
+    hunter_shoot_target=int | None,  # None = hunter skipped
+    badge_transfer_to=int | None,
+    day=day,
+    phase=Phase.DAY,
+    sub_phase=SubPhase.DEATH_RESOLUTION
+)
+```
+
+**Processing:**
+
+1. For each death, create a `DeathEvent` event
+2. Include `last_words` if the player has any (night deaths Night 1, day deaths always)
+3. If Hunter dies: set `hunter_shoot_target` (None = skipped)
+4. If Sheriff dies: include `badge_transfer_to`
+5. VictoryCheck is evaluated after all death-triggered events
 
 ---
 
@@ -143,16 +177,7 @@ class HandlerResult(BaseModel):
 - living_players: All living players
 ```
 
-**Output:**
-```python
-WerewolfKill(
-    actor=int,  # Any werewolf
-    target=int | None,  # None = no kill
-    day=day,
-    phase=Phase.NIGHT,
-    micro_phase=MicroPhase.WEREWOLF_ACTION
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `WerewolfKill` event.
 
 **Rules:**
 - If no werewolves alive, phase is skipped
@@ -171,17 +196,7 @@ WerewolfKill(
 - night_actions.kill_target: Who werewolves targeted
 ```
 
-**Output:**
-```python
-WitchAction(
-    actor=int,  # Witch's seat
-    action_type=WitchActionType,  # ANTIDOTE, POISON, or PASS
-    target=int | None,
-    day=day,
-    phase=Phase.NIGHT,
-    micro_phase=MicroPhase.WITCH_ACTION
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `WitchAction` event.
 
 **Rules:**
 - Witch knows werewolf's target before deciding
@@ -201,16 +216,7 @@ WitchAction(
 - night_actions.guard_prev_target: Who Guard protected last night
 ```
 
-**Output:**
-```python
-GuardAction(
-    actor=int,  # Guard's seat
-    target=int | None,  # None = skip
-    day=day,
-    phase=Phase.NIGHT,
-    micro_phase=MicroPhase.GUARD_ACTION
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `GuardAction` event.
 
 **Rules:**
 - Cannot guard the same person two consecutive nights
@@ -227,24 +233,14 @@ GuardAction(
 - living_players: Living players
 ```
 
-**Output:**
-```python
-SeerAction(
-    actor=int,  # Seer's seat
-    target=int,
-    result=SeerResult,  # GOOD or WEREWOLF (engine computes)
-    day=day,
-    phase=Phase.NIGHT,
-    micro_phase=MicroPhase.SEER_ACTION
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `SeerAction` event.
 
 **Rules:**
 - Result is computed by engine based on target's role
 
 ---
 
-### NightResolution
+### NightOutcome
 
 **Purpose:** Calculate all deaths and update state.
 
@@ -254,22 +250,18 @@ SeerAction(
 - players: Full state with roles
 ```
 
-**Output:**
-```python
-NightResolution(
-    deaths=list[int],
-    day=day,
-    phase=Phase.NIGHT,
-    micro_phase=MicroPhase.NIGHT_RESOLUTION
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `NightOutcome` event.
 
 **Death Calculation (engine logic):**
-1. Start with werewolf target
+1. Start with werewolf target (WEREWOLF_KILL)
 2. If antidote used on target: target survives
 3. If guard protected target: target survives
-4. If poison used: that player dies
-5. Collect all deaths
+4. If poison used: that player dies (POISON)
+5. Build death dict: `{seat: DeathCause}`
+
+**Note:** Death causes are stored because:
+- Hunter can only shoot if killed by werewolves (WEREWOLF_KILL)
+- Hunter cannot shoot if poisoned (POISON)
 
 ---
 
@@ -284,16 +276,7 @@ NightResolution(
 - sheriff: Current Sheriff (None on Day 1)
 ```
 
-**Output:**
-```python
-Speech(
-    actor=int,  # Candidate's seat
-    content=str,
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.CAMPAIGN
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `Speech` events.
 
 **Rules:**
 - Only Day 1
@@ -310,19 +293,11 @@ Speech(
 - day: Current day (must be 1)
 ```
 
-**Output:**
-```python
-SheriffOptOut(
-    actor=int,  # Candidate's seat
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.OPT_OUT
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `SheriffOptOut` events.
 
 ---
 
-### SheriffElection
+### SheriffOutcome
 
 **Purpose:** Vote for Sheriff (Day 1 only).
 
@@ -332,17 +307,7 @@ SheriffOptOut(
 - sheriff_candidates: After opt-outs
 ```
 
-**Output:**
-```python
-SheriffElection(
-    candidates=list[int],
-    votes=dict[int, float],  # seat -> vote count (Sheriff = 1.5)
-    winner=int | None,
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.SHERIFF_ELECTION
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `SheriffOutcome` event.
 
 **Rules:**
 - All living players vote (no abstention)
@@ -352,86 +317,20 @@ SheriffElection(
 
 ---
 
-### DeathAnnouncement
-
-**Purpose:** Reveal who died during the night.
-
-**Input:**
-```
-- dead_players: From NightResolution
-```
-
-**Output:**
-```python
-DeathAnnouncement(
-    dead_players=list[int],
-    death_count=int,
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.DEATH_ANNOUNCEMENT
-)
-```
-
-**Rules:**
-- Only names announced (no roles, no causes)
-- Ordered by seat number
-
----
-
-### LastWords
-
-**Purpose:** Night death final statements (Night 1 only).
-
-**Input:**
-
-```
-- day: Current day
-```
-
-**Output:**
-
-```python
-Speech(
-    actor=int,  # Dead player's seat
-    content=str,
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.LAST_WORDS
-)
-```
-
-**Rules:**
-
-- Only Night 1
-
----
-
 ### Discussion
 
 **Purpose:** Players discuss and debate.
 
 **Input:**
-
 ```
 - players: Full state
 - living_players: All alive
 - sheriff: Current Sheriff (for speaking order)
 ```
 
-**Output:**
-
-```python
-Speech(
-    actor=int,  # Speaker's seat
-    content=str,
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.DISCUSSION
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `Speech` events.
 
 **Rules:**
-
 - Sheriff speaks LAST
 - Others alternate clockwise/counter-clockwise
 
@@ -442,54 +341,20 @@ Speech(
 **Purpose:** Vote to banish a player.
 
 **Input:**
-
 ```
 - living_players: All alive
 - sheriff: Current Sheriff (vote weight = 1.5)
 ```
 
-**Output:**
-
-```python
-Vote(
-    actor=int,  # Voter's seat
-    target=int | None,  # None = abstain
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.VOTING
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `Vote` events.
 
 **Rules:**
-
 - All living players vote
 - Abstention allowed
 
 ---
 
-### BanishedLastWords
-
-**Purpose:** Banished player's final statement.
-
-**Input:**
-
-No special input - handler knows who was banished.
-
-**Output:**
-
-```python
-Speech(
-    actor=int,  # Banished player's seat
-    content=str,
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.BANNED_LAST_WORDS
-)
-```
-
----
-
-### VictoryCheck
+### VictoryOutcome
 
 **Purpose:** Check if game has ended.
 
@@ -499,93 +364,89 @@ Speech(
 - All events so far
 ```
 
-**Output:**
-```python
-VictoryCheck(
-    is_game_over=bool,
-    winner=str | None,
-    condition=VictoryCondition | None,
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.VICTORY_CHECK
-)
-```
+**Output:** `HandlerResult` containing `SubPhaseLog` with `VictoryOutcome` event.
 
 **Victory Conditions:**
+
 - Werewolves win: ALL_GODS_KILLED or ALL_VILLAGERS_KILLED
 - Villagers win: ALL_WEREWOLVES_KILLED or ALL_WEREWOLVES_BANISHED
 
 ---
 
-### HunterShoot
-
-**Purpose:** Hunter shoots on death.
-
-**Input:**
-
-```
-- living_players excluding hunter
-```
-
-**Output:**
-
-```python
-HunterShoot(
-    actor=int,  # Hunter's seat
-    target=int | None,  # None = skip
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.LAST_WORDS
-)
-```
-
----
-
-### BadgeTransfer
-
-**Purpose:** Transfer Sheriff badge when Sheriff dies.
-
-**Input:**
-
-```
-- sheriff: Dead sheriff seat
-- sheriff_candidates: Candidates from Day 1
-```
-
-**Output:**
-
-```python
-SheriffBadgeTransfer(
-    to_player=int | None,  # None if badge dies with Sheriff
-    day=day,
-    phase=Phase.DAY,
-    micro_phase=MicroPhase.LAST_WORDS
-)
-```
-
----
-
 ## Night Action Accumulator
+
+**Created fresh each night by the Engine. Handlers receive it as read-only.**
+
+The engine:
+1. Creates a new accumulator at the start of each night
+2. Passes it to handlers who need to read from it (Witch, Guard, NightResolution)
+3. Reads each handler's returned event and updates the accumulator
+4. Uses it during NightResolution to calculate deaths
 
 ```python
 class NightActionAccumulator(BaseModel):
-    """Accumulates night actions for resolution."""
+    """Accumulates night actions for resolution (fresh each night).
 
-    # From WerewolfAction
+    All fields are read-only for handlers. Engine populates fields after
+    reading handler events, and pre-fills persistent state (antidote_used,
+    poison_used, guard_prev_target) from engine storage each night.
+    """
+
+    # From WerewolfAction (engine fills after WerewolfKill event)
     kill_target: Optional[int] = None
 
-    # From WitchAction
+    # From WitchAction (engine fills after WitchAction event)
     antidote_target: Optional[int] = None
     poison_target: Optional[int] = None
+
+    # Persistent witch state (engine pre-fills from storage)
     antidote_used: bool = False
     poison_used: bool = False
 
-    # From GuardAction
+    # From GuardAction (engine fills after GuardAction event)
     guard_target: Optional[int] = None
+
+    # Persistent guard state (engine pre-fills from storage)
     guard_prev_target: Optional[int] = None
 
-    # Computed
+    # Computed by engine during NightResolution
     deaths: list[int] = Field(default_factory=list)
+```
+
+**Night Phase Flow:**
+
+```mermaid
+sequenceDiagram
+    participant E as Engine
+    participant H as Handler
+    participant P as Participant
+
+    E->>E: Create fresh NightActionAccumulator
+
+    Note over E: WerewolfAction
+    E->>H: PhaseContext (accumulator empty)
+    H->>P: Query werewolves
+    P-->>H: Decision
+    H->>E: HandlerResult(SubPhaseLog with WerewolfKill)
+    E->>E: accumulator.kill_target = 5
+
+    Note over E: WitchAction
+    E->>H: PhaseContext (accumulator.kill_target=5)
+    H->>P: Query witch
+    P-->>H: Decision
+    H->>E: HandlerResult(SubPhaseLog with WitchAction)
+    E->>E: accumulator.antidote_target = 5, antidote_used = True
+
+    Note over E: GuardAction
+    E->>H: PhaseContext (accumulator, guard_prev_target)
+    H->>P: Query guard
+    P-->>H: Decision
+    H->>E: HandlerResult(SubPhaseLog with GuardAction)
+    E->>E: accumulator.guard_target = 7
+
+    Note over E: NightResolution
+    E->>H: PhaseContext (full accumulator)
+    H->>E: NightOutcome with deaths calculated
 ```
 
 ---
@@ -605,10 +466,10 @@ sequenceDiagram
     H->>P: Query with context
     P-->>H: Decision
 
-    H->>E: HandlerResult(event)
+    H->>E: HandlerResult(SubPhaseLog)
 
     E->>E: Validate
-    E->>EL: Record event
+    E->>EL: Record SubPhaseLog
     E->>E: Determine next phase
 ```
 

@@ -28,12 +28,11 @@ class SubPhase(str, Enum):
     CAMPAIGN = "CAMPAIGN"
     OPT_OUT = "OPT_OUT"
     SHERIFF_ELECTION = "SHERIFF_ELECTION"
+    DEATH_RESOLUTION = "DEATH_RESOLUTION"
     DEATH_ANNOUNCEMENT = "DEATH_ANNOUNCEMENT"
     VICTORY_CHECK = "VICTORY_CHECK"
-    LAST_WORDS = "LAST_WORDS"
     DISCUSSION = "DISCUSSION"
     VOTING = "VOTING"
-    BANNED_LAST_WORDS = "BANNED_LAST_WORDS"
 
 
 class DeathCause(str, Enum):
@@ -166,15 +165,21 @@ class Vote(TargetAction):
         return f"Vote(actor={self.actor}, target={self.target})"
 
 
-class DeathResolution(CharacterAction):
-    """Death is being processed with all associated actions."""
+class DeathEvent(CharacterAction):
+    """Single death with all associated actions.
+
+    Created once per player death, containing:
+    - Cause of death
+    - Last words (if any)
+    - Hunter shoot target (if hunter dies; None = skipped)
+    - Badge transfer (if sheriff dies)
+    """
 
     phase: Phase = Phase.DAY
-    micro_phase: SubPhase  # LAST_WORDS or BANNED_LAST_WORDS
+    micro_phase: SubPhase = SubPhase.DEATH_RESOLUTION
     cause: DeathCause
     last_words: Optional[str] = None
-    hunter_shoot_target: Optional[int] = None
-    hunter_skipped: bool = False
+    hunter_shoot_target: Optional[int] = None  # None = hunter skipped
     badge_transfer_to: Optional[int] = None
 
     def __str__(self) -> str:
@@ -210,19 +215,6 @@ class GuardAction(TargetAction):
         return f"GuardAction(target={self.target})"
 
 
-class HunterShoot(TargetAction):
-    """Hunter's shoot action (usually triggered on death)."""
-
-    phase: Phase = Phase.DAY
-    micro_phase: SubPhase = SubPhase.LAST_WORDS
-    # target: Optional[int] = None  # Inherited from TargetAction, None = skipped
-
-    def __str__(self) -> str:
-        if self.target is None:
-            return f"HunterShoot(skip)"
-        return f"HunterShoot(target={self.target})"
-
-
 # ============================================================================
 # Non-Character Events (aggregate results, announcements, etc.)
 # ============================================================================
@@ -252,7 +244,7 @@ class DeathAnnouncement(GameEvent):
         return f"DeathAnnouncement({self.dead_players})"
 
 
-class SheriffElection(GameEvent):
+class SheriffOutcome(GameEvent):
     """Sheriff election voting results."""
 
     phase: Phase = Phase.DAY
@@ -262,7 +254,7 @@ class SheriffElection(GameEvent):
     winner: Optional[int] = None
 
     def __str__(self) -> str:
-        return f"SheriffElection(winner={self.winner})"
+        return f"SheriffOutcome(winner={self.winner})"
 
 
 class Banishment(GameEvent):
@@ -278,26 +270,18 @@ class Banishment(GameEvent):
         return f"Banishment(banished={self.banished})"
 
 
-class SheriffBadgeTransfer(GameEvent):
-    """Sheriff badge is transferred."""
-
-    phase: Phase = Phase.DAY
-    micro_phase: SubPhase = SubPhase.LAST_WORDS
-    to_player: Optional[int]  # None if badge dies with Sheriff
-
-    def __str__(self) -> str:
-        return f"SheriffBadgeTransfer(to={self.to_player})"
-
-
-class NightResolution(GameEvent):
+class NightOutcome(GameEvent):
     """Night phase has resolved with all deaths calculated."""
 
     phase: Phase = Phase.NIGHT
     micro_phase: SubPhase = SubPhase.NIGHT_RESOLUTION
-    deaths: list[int] = Field(default_factory=list)  # seats
+    deaths: dict[int, DeathCause] = Field(default_factory=dict)  # seat -> cause
 
     def __str__(self) -> str:
-        return f"NightResolution(deaths={self.deaths})"
+        if not self.deaths:
+            return "NightOutcome(no deaths)"
+        death_strs = [f"{seat}({cause.value})" for seat, cause in sorted(self.deaths.items())]
+        return f"NightOutcome(deaths={death_strs})"
 
 
 # ============================================================================
@@ -305,7 +289,7 @@ class NightResolution(GameEvent):
 # ============================================================================
 
 
-class VictoryCheck(GameEvent):
+class VictoryOutcome(GameEvent):
     """Victory condition check."""
 
     is_game_over: bool = False
@@ -314,8 +298,8 @@ class VictoryCheck(GameEvent):
 
     def __str__(self) -> str:
         if self.is_game_over:
-            return f"VictoryCheck({self.winner} wins by {self.condition.value})"
-        return f"VictoryCheck(ongoing)"
+            return f"VictoryOutcome({self.winner} wins by {self.condition.value})"
+        return f"VictoryOutcome(ongoing)"
 
 
 class GameOver(GameEvent):

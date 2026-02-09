@@ -8,9 +8,9 @@ from .game_events import (
     Phase,
     SubPhase,
     GameStart,
-    NightResolution,
+    NightOutcome,
     Speech,
-    SheriffElection,
+    SheriffOutcome,
     GameOver,
     GameEvent,
 )
@@ -244,7 +244,7 @@ class GameEventLog(BaseModel):
         for sp in phase.subphases:
             if sp.micro_phase == SubPhase.NIGHT_RESOLUTION and sp.events:
                 resolution = sp.events[0]
-                if isinstance(resolution, NightResolution):
+                if isinstance(resolution, NightOutcome):
                     return resolution.deaths
         return []
 
@@ -282,7 +282,7 @@ class GameEventLog(BaseModel):
                 for sp in phase.subphases:
                     if sp.micro_phase == SubPhase.SHERIFF_ELECTION and sp.events:
                         election = sp.events[0]
-                        if isinstance(election, SheriffElection) and election.winner is not None:
+                        if isinstance(election, SheriffOutcome) and election.winner is not None:
                             sheriffs[phase.number] = election.winner
                             break
         return sheriffs
