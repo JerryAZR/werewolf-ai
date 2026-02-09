@@ -21,7 +21,7 @@ This game adopts the **Slaughter the Side** rule. If either side of the Villager
 |------|-------------|
 | Werewolf | Can jointly kill one player every night. |
 
-### Villager Camp (9 Players)
+### Villager Camp (8 Players)
 | Role | Count | Description |
 |------|-------|-------------|
 | Ordinary Villager | 4 | No special abilities. Participates in voting and discussion during the day. |
@@ -29,7 +29,12 @@ This game adopts the **Slaughter the Side** rule. If either side of the Villager
 | Witch | 1 | Has one bottle of antidote and one bottle of poison. Can save one person or poison one person per night. |
 | Hunter | 1 | Can shoot and take one player with them upon death (cannot activate if poisoned by the Witch). |
 | Guard | 1 | Can guard one player every night, protecting them from werewolf attacks (cannot guard the same person two nights in a row). |
-| Sheriff | 1 | Elected by players on Day 1. Has tie-breaking vote and inherits the lead in discussion. |
+
+### Sheriff (Title)
+The Sheriff is **not a separate role** but a **title** that can be given to any player. One player may be elected as Sheriff on Day 1, gaining the following abilities:
+- Vote counts as 1.5 (breaks ties)
+- Leads discussion
+- Badge is transferable on death |
 
 ## Game Flow
 
