@@ -4,7 +4,8 @@
       "Bash(uv:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(python -c:*)"
+      "Bash(python -c:*)",
+      "Bash(dir:*)"
     ]
   }
 }

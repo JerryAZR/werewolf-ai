@@ -7,7 +7,7 @@ from werewolf.events.game_events import (
     TargetAction,
     # Enums
     Phase,
-    MicroPhase,
+    SubPhase,
     DeathCause,
     WitchActionType,
     SeerResult,
@@ -34,6 +34,12 @@ from werewolf.events.game_events import (
     GameOver,
 )
 
+from werewolf.events.event_log import (
+    GameEventLog,
+    PhaseLog,
+    SubPhaseLog,
+)
+
 __all__ = [
     # Base
     "GameEvent",
@@ -41,7 +47,7 @@ __all__ = [
     "TargetAction",
     # Enums
     "Phase",
-    "MicroPhase",
+    "SubPhase",
     "DeathCause",
     "WitchActionType",
     "SeerResult",
@@ -66,4 +72,8 @@ __all__ = [
     # Victory (TBD)
     "VictoryCheck",
     "GameOver",
+    # Logs
+    "GameEventLog",
+    "PhaseLog",
+    "SubPhaseLog",
 ]

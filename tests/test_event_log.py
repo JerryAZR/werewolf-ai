@@ -3,26 +3,11 @@
 import pytest
 import tempfile
 import os
-from pathlib import Path
 
 from src.werewolf.events.event_log import (
     GameEventLog,
-    NightPhase,
-    DayPhase,
-    WerewolfActionSubPhase,
-    WitchActionSubPhase,
-    GuardActionSubPhase,
-    SeerActionSubPhase,
-    NightResolutionSubPhase,
-    CampaignSubPhase,
-    OptOutSubPhase,
-    SheriffElectionSubPhase,
-    DeathAnnouncementSubPhase,
-    LastWordsSubPhase,
-    DiscussionSubPhase,
-    VotingSubPhase,
-    BanishedLastWordsSubPhase,
-    VictoryCheckSubPhase,
+    PhaseLog,
+    SubPhaseLog,
 )
 from src.werewolf.events.game_events import (
     GameStart,
@@ -33,7 +18,7 @@ from src.werewolf.events.game_events import (
     SeerResult,
     NightResolution,
     Speech,
-    MicroPhase,
+    SubPhase,
     SheriffElection,
     SheriffOptOut,
     Vote,
@@ -46,410 +31,85 @@ from src.werewolf.events.game_events import (
 )
 
 
-class TestNightSubPhases:
-    """Tests for NightSubPhase data containers."""
+class TestSubPhaseLog:
+    """Tests for SubPhaseLog container."""
 
-    def test_werewolf_action_subphase_pending(self):
-        """Test WerewolfActionSubPhase with no action."""
-        subphase = WerewolfActionSubPhase()
-        assert subphase.kill is None
-        assert subphase.micro_phase == MicroPhase.WEREWOLF_ACTION
-        assert "pending" in str(subphase)
+    def test_subphase_empty(self):
+        """Test SubPhaseLog with no events."""
+        subphase = SubPhaseLog(micro_phase=SubPhase.WEREWOLF_ACTION)
+        assert len(subphase.events) == 0
+        assert subphase.micro_phase == SubPhase.WEREWOLF_ACTION
+        assert str(subphase) == "WEREWOLF_ACTION"
 
-    def test_werewolf_action_subphase_with_kill(self):
-        """Test WerewolfActionSubPhase with a kill action."""
+    def test_subphase_with_single_event(self):
+        """Test SubPhaseLog with a single event."""
         kill = WerewolfKill(actor=0, day=1, target=5)
-        subphase = WerewolfActionSubPhase(kill=kill)
-        assert subphase.kill == kill
-        assert "kill seat 5" in str(subphase)
+        subphase = SubPhaseLog(micro_phase=SubPhase.WEREWOLF_ACTION, events=[kill])
+        assert len(subphase.events) == 1
+        assert subphase.events[0] == kill
+        assert "WEREWOLF_ACTION" in str(subphase)
+        assert "5" in str(subphase)  # target seat
 
-    def test_werewolf_action_subphase_no_kill(self):
-        """Test WerewolfActionSubPhase when werewolves choose not to kill."""
-        kill = WerewolfKill(actor=0, day=1, target=None)
-        subphase = WerewolfActionSubPhase(kill=kill)
-        assert "no kill" in str(subphase)
-
-    def test_witch_action_subphase_pending(self):
-        """Test WitchActionSubPhase with no action."""
-        subphase = WitchActionSubPhase()
-        assert subphase.action is None
-        assert "pending" in str(subphase)
-
-    def test_witch_action_subphase_pass(self):
-        """Test WitchActionSubPhase with pass action."""
-        action = WitchAction(
-            actor=2, day=1, action_type=WitchActionType.PASS
-        )
-        subphase = WitchActionSubPhase(action=action)
-        assert "pass" in str(subphase)  # "WitchAction: pass"
-
-    def test_witch_action_subphase_antidote(self):
-        """Test WitchActionSubPhase with antidote action."""
-        action = WitchAction(
-            actor=2, day=1, action_type=WitchActionType.ANTIDOTE, target=5
-        )
-        subphase = WitchActionSubPhase(action=action)
-        assert "ANTIDOTE" in str(subphase)
-        assert "seat 5" in str(subphase)
-
-    def test_witch_action_subphase_poison(self):
-        """Test WitchActionSubPhase with poison action."""
-        action = WitchAction(
-            actor=2, day=1, action_type=WitchActionType.POISON, target=7
-        )
-        subphase = WitchActionSubPhase(action=action)
-        assert "POISON" in str(subphase)
-        assert "seat 7" in str(subphase)
-
-    def test_guard_action_subphase_pending(self):
-        """Test GuardActionSubPhase with no action."""
-        subphase = GuardActionSubPhase()
-        assert subphase.action is None
-        assert "pending" in str(subphase)
-
-    def test_guard_action_subphase_with_target(self):
-        """Test GuardActionSubPhase with a protect target."""
-        action = GuardAction(actor=1, day=1, target=5)
-        subphase = GuardActionSubPhase(action=action)
-        assert "protect seat 5" in str(subphase)
-
-    def test_guard_action_subphase_skip(self):
-        """Test GuardActionSubPhase when guard skips."""
-        action = GuardAction(actor=1, day=1, target=None)
-        subphase = GuardActionSubPhase(action=action)
-        assert "skip" in str(subphase)
-
-    def test_seer_action_subphase_pending(self):
-        """Test SeerActionSubPhase with no action."""
-        subphase = SeerActionSubPhase()
-        assert subphase.action is None
-        assert "pending" in str(subphase)
-
-    def test_seer_action_subphase_good_result(self):
-        """Test SeerActionSubPhase with GOOD result."""
-        action = SeerAction(actor=3, day=1, target=5, result=SeerResult.GOOD)
-        subphase = SeerActionSubPhase(action=action)
-        assert "check seat 5 = GOOD" in str(subphase)
-
-    def test_seer_action_subphase_werewolf_result(self):
-        """Test SeerActionSubPhase with WEREWOLF result."""
-        action = SeerAction(actor=3, day=1, target=5, result=SeerResult.WEREWOLF)
-        subphase = SeerActionSubPhase(action=action)
-        assert "check seat 5 = WEREWOLF" in str(subphase)
-
-    def test_night_resolution_subphase_pending(self):
-        """Test NightResolutionSubPhase with no resolution."""
-        subphase = NightResolutionSubPhase()
-        assert subphase.resolution is None
-        assert "pending" in str(subphase)
-
-    def test_night_resolution_subphase_with_deaths(self):
-        """Test NightResolutionSubPhase with deaths."""
-        resolution = NightResolution(day=1, deaths=[5, 7])
-        subphase = NightResolutionSubPhase(resolution=resolution)
-        assert "deaths = [5, 7]" in str(subphase)
-
-    def test_night_resolution_subphase_no_deaths(self):
-        """Test NightResolutionSubPhase when no one dies."""
-        resolution = NightResolution(day=1, deaths=[])
-        subphase = NightResolutionSubPhase(resolution=resolution)
-        assert "no deaths" in str(subphase)
+    def test_subphase_with_multiple_events(self):
+        """Test SubPhaseLog with multiple events."""
+        speech1 = Speech(actor=0, day=1, micro_phase=SubPhase.CAMPAIGN, content="Vote me!")
+        speech2 = Speech(actor=1, day=1, micro_phase=SubPhase.CAMPAIGN, content="No, vote me!")
+        subphase = SubPhaseLog(micro_phase=SubPhase.CAMPAIGN, events=[speech1, speech2])
+        assert len(subphase.events) == 2
+        output = str(subphase)
+        assert "CAMPAIGN" in output
+        assert "Vote me!" in output
+        assert "No, vote me!" in output
 
 
-class TestDaySubPhases:
-    """Tests for DaySubPhase data containers."""
+class TestPhase:
+    """Tests for unified Phase container."""
 
-    def test_campaign_subphase_empty(self):
-        """Test CampaignSubPhase with no speeches."""
-        subphase = CampaignSubPhase()
-        assert len(subphase.speeches) == 0
-        assert "no speeches" in str(subphase)
-
-    def test_campaign_subphase_with_speech(self):
-        """Test CampaignSubPhase with a campaign speech."""
-        speech = Speech(
-            actor=0, day=1, micro_phase=MicroPhase.CAMPAIGN, content="Vote for me!"
-        )
-        subphase = CampaignSubPhase(speeches=[speech])
-        assert len(subphase.speeches) == 1
-        assert "Vote for me!" in str(subphase)
-        assert "Seat 0" in str(subphase)
-
-    def test_campaign_subphase_long_content_preview(self):
-        """Test CampaignSubPhase truncates long speech content."""
-        long_content = "A" * 100
-        speech = Speech(actor=0, day=1, micro_phase=MicroPhase.CAMPAIGN, content=long_content)
-        subphase = CampaignSubPhase(speeches=[speech])
-        assert "..." in str(subphase)
-        assert len(long_content) > 50
-
-    def test_opt_out_subphase_empty(self):
-        """Test OptOutSubPhase with no opt-outs."""
-        subphase = OptOutSubPhase()
-        assert len(subphase.opt_outs) == 0
-        assert "no one dropped out" in str(subphase)
-
-    def test_opt_out_subphase_with_opt_outs(self):
-        """Test OptOutSubPhase with players dropping out."""
-        opt_out1 = SheriffOptOut(actor=2, day=1)
-        opt_out2 = SheriffOptOut(actor=5, day=1)
-        subphase = OptOutSubPhase(opt_outs=[opt_out1, opt_out2])
-        assert len(subphase.opt_outs) == 2
-        assert "[2, 5]" in str(subphase)
-
-    def test_sheriff_election_subphase_pending(self):
-        """Test SheriffElectionSubPhase with no election."""
-        subphase = SheriffElectionSubPhase()
-        assert subphase.election is None
-        assert "pending" in str(subphase)
-
-    def test_sheriff_election_subphase_with_winner(self):
-        """Test SheriffElectionSubPhase with a winner."""
-        election = SheriffElection(day=1, winner=3)
-        subphase = SheriffElectionSubPhase(election=election)
-        assert "winner = seat 3" in str(subphase)
-
-    def test_sheriff_election_subphase_tie(self):
-        """Test SheriffElectionSubPhase when no winner (tie)."""
-        election = SheriffElection(day=1, winner=None)
-        subphase = SheriffElectionSubPhase(election=election)
-        assert "no winner" in str(subphase)
-
-    def test_death_announcement_subphase_pending(self):
-        """Test DeathAnnouncementSubPhase with no announcement."""
-        subphase = DeathAnnouncementSubPhase()
-        assert subphase.announcement is None
-        assert "pending" in str(subphase)
-
-    def test_death_announcement_subphase_with_deaths(self):
-        """Test DeathAnnouncementSubPhase with dead players."""
-        announcement = DeathAnnouncement(day=1, dead_players=[5, 7])
-        subphase = DeathAnnouncementSubPhase(announcement=announcement)
-        assert "dead = [5, 7]" in str(subphase)
-
-    def test_death_announcement_subphase_no_deaths(self):
-        """Test DeathAnnouncementSubPhase when no one died."""
-        announcement = DeathAnnouncement(day=1, dead_players=[])
-        subphase = DeathAnnouncementSubPhase(announcement=announcement)
-        assert "no deaths" in str(subphase)
-
-    def test_last_words_subphase_empty(self):
-        """Test LastWordsSubPhase with no speeches."""
-        subphase = LastWordsSubPhase()
-        assert len(subphase.speeches) == 0
-        assert "no speeches" in str(subphase)
-
-    def test_last_words_subphase_with_speech(self):
-        """Test LastWordsSubPhase with last words."""
-        speech = Speech(
-            actor=5, day=1, micro_phase=MicroPhase.LAST_WORDS, content="I was the seer!"
-        )
-        subphase = LastWordsSubPhase(speeches=[speech])
-        assert len(subphase.speeches) == 1
-        assert "I was the seer!" in str(subphase)
-
-    def test_discussion_subphase_empty(self):
-        """Test DiscussionSubPhase with no speeches."""
-        subphase = DiscussionSubPhase()
-        assert len(subphase.speeches) == 0
-        assert "no speeches" in str(subphase)
-
-    def test_discussion_subphase_with_speeches(self):
-        """Test DiscussionSubPhase with multiple speeches."""
-        speech1 = Speech(
-            actor=0, day=1, micro_phase=MicroPhase.DISCUSSION, content="I trust player 3."
-        )
-        speech2 = Speech(
-            actor=3, day=1, micro_phase=MicroPhase.DISCUSSION, content="I'm innocent!"
-        )
-        subphase = DiscussionSubPhase(speeches=[speech1, speech2])
-        assert len(subphase.speeches) == 2
-
-    def test_voting_subphase_empty(self):
-        """Test VotingSubPhase with no votes."""
-        subphase = VotingSubPhase()
-        assert len(subphase.votes) == 0
-        assert "no votes" in str(subphase)
-
-    def test_voting_subphase_with_votes(self):
-        """Test VotingSubPhase with votes."""
-        votes = [
-            Vote(actor=0, day=1, target=5),
-            Vote(actor=1, day=1, target=5),
-            Vote(actor=2, day=1, target=7),
-        ]
-        subphase = VotingSubPhase(votes=votes)
-        assert len(subphase.votes) == 3
-        assert "2 for seat 7" in str(subphase) or "2 for seat 5" in str(subphase)
-
-    def test_voting_subphase_abstain(self):
-        """Test VotingSubPhase with abstain votes."""
-        votes = [
-            Vote(actor=0, day=1, target=None),  # abstain
-            Vote(actor=1, day=1, target=5),
-        ]
-        subphase = VotingSubPhase(votes=votes)
-        assert "abstain" in str(subphase)
-
-    def test_banished_last_words_subphase_no_speech(self):
-        """Test BanishedLastWordsSubPhase with no speech."""
-        subphase = BanishedLastWordsSubPhase()
-        assert subphase.speech is None
-        assert "no speech" in str(subphase)
-
-    def test_banished_last_words_subphase_with_speech(self):
-        """Test BanishedLastWordsSubPhase with a speech."""
-        speech = Speech(
-            actor=5, day=1, micro_phase=MicroPhase.BANNED_LAST_WORDS, content="Good game!"
-        )
-        subphase = BanishedLastWordsSubPhase(speech=speech)
-        assert "seat 5" in str(subphase)
-        assert "Good game!" in str(subphase)
-
-    def test_victory_check_subphase_pending(self):
-        """Test VictoryCheckSubPhase with no check."""
-        subphase = VictoryCheckSubPhase()
-        assert subphase.check is None
-        assert "pending" in str(subphase)
-
-    def test_victory_check_subphase_game_continues(self):
-        """Test VictoryCheckSubPhase when game continues."""
-        check = VictoryCheck(phase=Phase.DAY, is_game_over=False)
-        subphase = VictoryCheckSubPhase(check=check)
-        assert "game continues" in str(subphase)
-
-    def test_victory_check_subphase_game_over(self):
-        """Test VictoryCheckSubPhase when game is over."""
-        check = VictoryCheck(
-            phase=Phase.DAY,
-            is_game_over=True,
-            winner="WEREWOLF",
-            condition=VictoryCondition.ALL_WEREWOLVES_KILLED,
-        )
-        subphase = VictoryCheckSubPhase(check=check)
-        assert "WEREWOLF" in str(subphase)
-        assert "WOLVES_KILLED" in str(subphase)
-
-
-class TestNightPhase:
-    """Tests for NightPhase container."""
-
-    def test_night_phase_basic(self):
-        """Test basic NightPhase creation."""
-        night = NightPhase(night_number=1)
-        assert night.night_number == 1
-        assert night.phase.value == "NIGHT"
+    def test_phase_night_basic(self):
+        """Test basic Night Phase creation."""
+        night = PhaseLog(number=1, kind=Phase.NIGHT)
+        assert night.number == 1
+        assert night.kind == Phase.NIGHT
         assert len(night.subphases) == 0
 
-    def test_night_phase_with_subphases(self):
-        """Test NightPhase with subphases."""
-        kill = WerewolfKill(actor=0, day=1, target=5)
-        werewolf_sp = WerewolfActionSubPhase(kill=kill)
-
-        guard_action = GuardAction(actor=1, day=1, target=3)
-        guard_sp = GuardActionSubPhase(action=guard_action)
-
-        night = NightPhase(night_number=1, subphases=[werewolf_sp, guard_sp])
-        assert len(night.subphases) == 2
-
-    def test_night_phase_deaths_property(self):
-        """Test NightPhase.deaths property."""
-        night = NightPhase(night_number=1)
-
-        # No resolution yet
-        assert night.deaths == []
-
-        # With resolution
-        resolution = NightResolution(day=1, deaths=[5, 7])
-        resolution_sp = NightResolutionSubPhase(resolution=resolution)
-        night.subphases.append(resolution_sp)
-        assert night.deaths == [5, 7]
-
-    def test_night_phase_str_empty(self):
-        """Test NightPhase string representation with no subphases."""
-        night = NightPhase(night_number=1)
-        assert "(no actions)" in str(night)
-
-    def test_night_phase_str_with_subphases(self):
-        """Test NightPhase string representation with subphases."""
-        kill = WerewolfKill(actor=0, day=1, target=5)
-        werewolf_sp = WerewolfActionSubPhase(kill=kill)
-        night = NightPhase(night_number=1, subphases=[werewolf_sp])
-        output = str(night)
-        assert "Night 1" in output
-        assert "kill seat 5" in output
-
-
-class TestDayPhase:
-    """Tests for DayPhase container."""
-
-    def test_day_phase_basic(self):
-        """Test basic DayPhase creation."""
-        day = DayPhase(day_number=1)
-        assert day.day_number == 1
-        assert day.phase.value == "DAY"
+    def test_phase_day_basic(self):
+        """Test basic Day Phase creation."""
+        day = PhaseLog(number=1, kind=Phase.DAY)
+        assert day.number == 1
+        assert day.kind == Phase.DAY
         assert len(day.subphases) == 0
 
-    def test_day_phase_is_day1(self):
-        """Test DayPhase.is_day1 property."""
-        day1 = DayPhase(day_number=1)
-        day2 = DayPhase(day_number=2)
-        assert day1.is_day1 is True
-        assert day2.is_day1 is False
+    def test_phase_with_subphases(self):
+        """Test Phase with subphases."""
+        kill = WerewolfKill(actor=0, day=1, target=5)
+        werewolf_sp = SubPhaseLog(micro_phase=SubPhase.WEREWOLF_ACTION, events=[kill])
 
-    def test_day_phase_all_speeches_empty(self):
-        """Test DayPhase.all_speeches when no speeches."""
-        day = DayPhase(day_number=1)
-        assert day.all_speeches == []
+        guard_action = GuardAction(actor=1, day=1, target=3)
+        guard_sp = SubPhaseLog(micro_phase=SubPhase.GUARD_ACTION, events=[guard_action])
 
-    def test_day_phase_all_speeches_from_campaign(self):
-        """Test DayPhase.all_speeches from CampaignSubPhase."""
-        speech = Speech(
-            actor=0, day=1, micro_phase=MicroPhase.CAMPAIGN, content="Vote me!"
-        )
-        campaign = CampaignSubPhase(speeches=[speech])
-        day = DayPhase(day_number=1, subphases=[campaign])
-        assert len(day.all_speeches) == 1
-        assert day.all_speeches[0].content == "Vote me!"
+        night = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[werewolf_sp, guard_sp])
+        assert len(night.subphases) == 2
 
-    def test_day_phase_all_speeches_from_discussion(self):
-        """Test DayPhase.all_speeches from DiscussionSubPhase."""
-        speech = Speech(
-            actor=3, day=1, micro_phase=MicroPhase.DISCUSSION, content="I'm innocent."
-        )
-        discussion = DiscussionSubPhase(speeches=[speech])
-        day = DayPhase(day_number=1, subphases=[discussion])
-        assert len(day.all_speeches) == 1
-        assert day.all_speeches[0].content == "I'm innocent."
+    def test_phase_str_empty_night(self):
+        """Test Phase string representation for empty night."""
+        night = PhaseLog(number=1, kind=Phase.NIGHT)
+        assert "NIGHT 1" in str(night)
+        assert "(no events)" in str(night)
 
-    def test_day_phase_all_speeches_from_multiple_sources(self):
-        """Test DayPhase.all_speeches from multiple subphases."""
-        campaign_speech = Speech(
-            actor=0, day=1, micro_phase=MicroPhase.CAMPAIGN, content="Campaign."
-        )
-        discussion_speech = Speech(
-            actor=3, day=1, micro_phase=MicroPhase.DISCUSSION, content="Discussion."
-        )
-        campaign = CampaignSubPhase(speeches=[campaign_speech])
-        discussion = DiscussionSubPhase(speeches=[discussion_speech])
-        day = DayPhase(day_number=1, subphases=[campaign, discussion])
-        assert len(day.all_speeches) == 2
-
-    def test_day_phase_str_empty(self):
-        """Test DayPhase string representation with no subphases."""
-        day = DayPhase(day_number=1)
+    def test_phase_str_empty_day(self):
+        """Test Phase string representation for empty day."""
+        day = PhaseLog(number=1, kind=Phase.DAY)
+        assert "DAY 1" in str(day)
         assert "(no events)" in str(day)
 
-    def test_day_phase_str_with_subphases(self):
-        """Test DayPhase string representation with subphases."""
-        speech = Speech(
-            actor=0, day=1, micro_phase=MicroPhase.CAMPAIGN, content="Vote me!"
-        )
-        campaign = CampaignSubPhase(speeches=[speech])
-        day = DayPhase(day_number=1, subphases=[campaign])
-        output = str(day)
-        assert "Day 1" in output
-        assert "Campaign:" in output
+    def test_phase_str_with_subphases(self):
+        """Test Phase string representation with subphases."""
+        kill = WerewolfKill(actor=0, day=1, target=5)
+        werewolf_sp = SubPhaseLog(micro_phase=SubPhase.WEREWOLF_ACTION, events=[kill])
+        night = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[werewolf_sp])
+        output = str(night)
+        assert "NIGHT 1" in output
+        assert "WEREWOLF_ACTION" in output
 
 
 class TestGameEventLog:
@@ -476,18 +136,18 @@ class TestGameEventLog:
         assert "T" in log.created_at  # ISO format
 
     def test_game_event_log_add_night_phase(self):
-        """Test adding a NightPhase to the log."""
+        """Test adding a night phase to the log."""
         log = GameEventLog(player_count=12)
-        night = NightPhase(night_number=1)
+        night = PhaseLog(number=1, kind=Phase.NIGHT)
         log.add_phase(night)
         assert len(log.phases) == 1
         assert log.current_night == 1
         assert log.current_day == 0
 
     def test_game_event_log_add_day_phase(self):
-        """Test adding a DayPhase to the log."""
+        """Test adding a day phase to the log."""
         log = GameEventLog(player_count=12)
-        day = DayPhase(day_number=1)
+        day = PhaseLog(number=1, kind=Phase.DAY)
         log.add_phase(day)
         assert len(log.phases) == 1
         assert log.current_day == 1
@@ -496,9 +156,9 @@ class TestGameEventLog:
     def test_game_event_log_add_multiple_phases(self):
         """Test adding multiple phases in order."""
         log = GameEventLog(player_count=12)
-        night1 = NightPhase(night_number=1)
-        day1 = DayPhase(day_number=1)
-        night2 = NightPhase(night_number=2)
+        night1 = PhaseLog(number=1, kind=Phase.NIGHT)
+        day1 = PhaseLog(number=1, kind=Phase.DAY)
+        night2 = PhaseLog(number=2, kind=Phase.NIGHT)
         log.add_phase(night1)
         log.add_phase(day1)
         log.add_phase(night2)
@@ -507,8 +167,8 @@ class TestGameEventLog:
     def test_game_event_log_duplicate_night_raises(self):
         """Test that adding duplicate Night raises ValueError."""
         log = GameEventLog(player_count=12)
-        night1 = NightPhase(night_number=1)
-        night1_copy = NightPhase(night_number=1)
+        night1 = PhaseLog(number=1, kind=Phase.NIGHT)
+        night1_copy = PhaseLog(number=1, kind=Phase.NIGHT)
         log.add_phase(night1)
         with pytest.raises(ValueError, match="Night 1 already exists"):
             log.add_phase(night1_copy)
@@ -516,8 +176,8 @@ class TestGameEventLog:
     def test_game_event_log_duplicate_day_raises(self):
         """Test that adding duplicate Day raises ValueError."""
         log = GameEventLog(player_count=12)
-        day1 = DayPhase(day_number=1)
-        day1_copy = DayPhase(day_number=1)
+        day1 = PhaseLog(number=1, kind=Phase.DAY)
+        day1_copy = PhaseLog(number=1, kind=Phase.DAY)
         log.add_phase(day1)
         with pytest.raises(ValueError, match="Day 1 already exists"):
             log.add_phase(day1_copy)
@@ -525,8 +185,8 @@ class TestGameEventLog:
     def test_game_event_log_get_night(self):
         """Test get_night method."""
         log = GameEventLog(player_count=12)
-        night1 = NightPhase(night_number=1)
-        night2 = NightPhase(night_number=2)
+        night1 = PhaseLog(number=1, kind=Phase.NIGHT)
+        night2 = PhaseLog(number=2, kind=Phase.NIGHT)
         log.add_phase(night1)
         log.add_phase(night2)
 
@@ -537,8 +197,8 @@ class TestGameEventLog:
     def test_game_event_log_get_day(self):
         """Test get_day method."""
         log = GameEventLog(player_count=12)
-        day1 = DayPhase(day_number=1)
-        day2 = DayPhase(day_number=2)
+        day1 = PhaseLog(number=1, kind=Phase.DAY)
+        day2 = PhaseLog(number=2, kind=Phase.DAY)
         log.add_phase(day1)
         log.add_phase(day2)
 
@@ -559,14 +219,14 @@ class TestGameEventLog:
     def test_game_event_log_current_night_with_only_day(self):
         """Test current_night when only day phases exist."""
         log = GameEventLog(player_count=12)
-        day = DayPhase(day_number=1)
+        day = PhaseLog(number=1, kind=Phase.DAY)
         log.add_phase(day)
         assert log.current_night == 0
 
     def test_game_event_log_current_day_with_only_night(self):
         """Test current_day when only night phases exist."""
         log = GameEventLog(player_count=12)
-        night = NightPhase(night_number=1)
+        night = PhaseLog(number=1, kind=Phase.NIGHT)
         log.add_phase(night)
         assert log.current_day == 0
 
@@ -585,14 +245,14 @@ class TestGameEventLogQueries:
 
         # Add night with deaths
         resolution = NightResolution(day=1, deaths=[5, 7])
-        resolution_sp = NightResolutionSubPhase(resolution=resolution)
-        night1 = NightPhase(night_number=1, subphases=[resolution_sp])
+        resolution_sp = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[resolution])
+        night1 = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[resolution_sp])
         log.add_phase(night1)
 
         # Add another night with different deaths
         resolution2 = NightResolution(day=2, deaths=[3])
-        resolution_sp2 = NightResolutionSubPhase(resolution=resolution2)
-        night2 = NightPhase(night_number=2, subphases=[resolution_sp2])
+        resolution_sp2 = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[resolution2])
+        night2 = PhaseLog(number=2, kind=Phase.NIGHT, subphases=[resolution_sp2])
         log.add_phase(night2)
 
         deaths = log.get_all_deaths()
@@ -611,10 +271,10 @@ class TestGameEventLogQueries:
         log = GameEventLog(player_count=12)
 
         speech1 = Speech(
-            actor=0, day=1, micro_phase=MicroPhase.CAMPAIGN, content="Speech 1"
+            actor=0, day=1, micro_phase=SubPhase.CAMPAIGN, content="Speech 1"
         )
-        campaign = CampaignSubPhase(speeches=[speech1])
-        day1 = DayPhase(day_number=1, subphases=[campaign])
+        campaign = SubPhaseLog(micro_phase=SubPhase.CAMPAIGN, events=[speech1])
+        day1 = PhaseLog(number=1, kind=Phase.DAY, subphases=[campaign])
         log.add_phase(day1)
 
         speeches = log.get_all_speeches()
@@ -627,18 +287,18 @@ class TestGameEventLogQueries:
 
         # Day 1
         speech1 = Speech(
-            actor=0, day=1, micro_phase=MicroPhase.CAMPAIGN, content="Day 1 speech"
+            actor=0, day=1, micro_phase=SubPhase.CAMPAIGN, content="Day 1 speech"
         )
-        campaign = CampaignSubPhase(speeches=[speech1])
-        day1 = DayPhase(day_number=1, subphases=[campaign])
+        campaign = SubPhaseLog(micro_phase=SubPhase.CAMPAIGN, events=[speech1])
+        day1 = PhaseLog(number=1, kind=Phase.DAY, subphases=[campaign])
         log.add_phase(day1)
 
         # Day 2
         speech2 = Speech(
-            actor=3, day=2, micro_phase=MicroPhase.DISCUSSION, content="Day 2 speech"
+            actor=3, day=2, micro_phase=SubPhase.DISCUSSION, content="Day 2 speech"
         )
-        discussion = DiscussionSubPhase(speeches=[speech2])
-        day2 = DayPhase(day_number=2, subphases=[discussion])
+        discussion = SubPhaseLog(micro_phase=SubPhase.DISCUSSION, events=[speech2])
+        day2 = PhaseLog(number=2, kind=Phase.DAY, subphases=[discussion])
         log.add_phase(day2)
 
         speeches = log.get_all_speeches()
@@ -649,7 +309,7 @@ class TestGameEventLogQueries:
     def test_get_sheriffs_empty(self):
         """Test get_sheriffs when no sheriff elected."""
         log = GameEventLog(player_count=12)
-        day = DayPhase(day_number=1)
+        day = PhaseLog(number=1, kind=Phase.DAY)
         log.add_phase(day)
         assert log.get_sheriffs() == {}
 
@@ -658,8 +318,8 @@ class TestGameEventLogQueries:
         log = GameEventLog(player_count=12)
 
         election = SheriffElection(day=1, winner=3)
-        election_sp = SheriffElectionSubPhase(election=election)
-        day1 = DayPhase(day_number=1, subphases=[election_sp])
+        election_sp = SubPhaseLog(micro_phase=SubPhase.SHERIFF_ELECTION, events=[election])
+        day1 = PhaseLog(number=1, kind=Phase.DAY, subphases=[election_sp])
         log.add_phase(day1)
 
         sheriffs = log.get_sheriffs()
@@ -671,13 +331,13 @@ class TestGameEventLogQueries:
 
         # Day 1 election
         election1 = SheriffElection(day=1, winner=3)
-        election_sp1 = SheriffElectionSubPhase(election=election1)
-        day1 = DayPhase(day_number=1, subphases=[election_sp1])
+        election_sp1 = SubPhaseLog(micro_phase=SubPhase.SHERIFF_ELECTION, events=[election1])
+        day1 = PhaseLog(number=1, kind=Phase.DAY, subphases=[election_sp1])
         log.add_phase(day1)
 
         # Day 2 (no sheriff election)
-        discussion = DiscussionSubPhase()
-        day2 = DayPhase(day_number=2, subphases=[discussion])
+        discussion = SubPhaseLog(micro_phase=SubPhase.DISCUSSION)
+        day2 = PhaseLog(number=2, kind=Phase.DAY, subphases=[discussion])
         log.add_phase(day2)
 
         sheriffs = log.get_sheriffs()
@@ -725,12 +385,12 @@ class TestGameEventLogSerialization:
         log = GameEventLog(player_count=12)
 
         kill = WerewolfKill(actor=0, day=1, target=5)
-        werewolf_sp = WerewolfActionSubPhase(kill=kill)
-        night = NightPhase(night_number=1, subphases=[werewolf_sp])
+        werewolf_sp = SubPhaseLog(micro_phase=SubPhase.WEREWOLF_ACTION, events=[kill])
+        night = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[werewolf_sp])
         log.add_phase(night)
 
         yaml_str = log.to_yaml()
-        assert "NightPhase" in yaml_str or "night" in yaml_str
+        assert "NIGHT" in yaml_str or "night" in yaml_str
 
     def test_save_to_file_and_load_from_file(self):
         """Test round-trip save and load."""
@@ -742,8 +402,8 @@ class TestGameEventLogSerialization:
 
         # Add a night with action
         kill = WerewolfKill(actor=0, day=1, target=5)
-        werewolf_sp = WerewolfActionSubPhase(kill=kill)
-        night = NightPhase(night_number=1, subphases=[werewolf_sp])
+        werewolf_sp = SubPhaseLog(micro_phase=SubPhase.WEREWOLF_ACTION, events=[kill])
+        night = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[werewolf_sp])
         log.add_phase(night)
 
         # Save to temp file
@@ -785,13 +445,13 @@ class TestGameEventLogStr:
         log = GameEventLog(player_count=12)
 
         kill = WerewolfKill(actor=0, day=1, target=5)
-        werewolf_sp = WerewolfActionSubPhase(kill=kill)
-        night = NightPhase(night_number=1, subphases=[werewolf_sp])
+        werewolf_sp = SubPhaseLog(micro_phase=SubPhase.WEREWOLF_ACTION, events=[kill])
+        night = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[werewolf_sp])
         log.add_phase(night)
 
         output = str(log)
-        assert "Night 1" in output
-        assert "kill seat 5" in output
+        assert "NIGHT 1" in output
+        assert "WEREWOLF_ACTION" in output
 
     def test_str_with_game_over(self):
         """Test str with game_over."""
@@ -816,14 +476,14 @@ class TestGameEventLogModelDump:
 
         # Add a night with deaths
         resolution = NightResolution(day=1, deaths=[5])
-        resolution_sp = NightResolutionSubPhase(resolution=resolution)
-        night = NightPhase(night_number=1, subphases=[resolution_sp])
+        resolution_sp = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[resolution])
+        night = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[resolution_sp])
         log.add_phase(night)
 
         # Add a day with speeches
-        speech = Speech(actor=0, day=1, micro_phase=MicroPhase.CAMPAIGN, content="Hello")
-        campaign = CampaignSubPhase(speeches=[speech])
-        day = DayPhase(day_number=1, subphases=[campaign])
+        speech = Speech(actor=0, day=1, micro_phase=SubPhase.CAMPAIGN, content="Hello")
+        campaign = SubPhaseLog(micro_phase=SubPhase.CAMPAIGN, events=[speech])
+        day = PhaseLog(number=1, kind=Phase.DAY, subphases=[campaign])
         log.add_phase(day)
 
         data = log.model_dump()
@@ -854,28 +514,29 @@ class TestIntegration:
 
         # Werewolf kill
         werewolf_kill = WerewolfKill(actor=0, day=1, target=5)
-        werewolf_sp = WerewolfActionSubPhase(kill=werewolf_kill)
+        werewolf_sp = SubPhaseLog(micro_phase=SubPhase.WEREWOLF_ACTION, events=[werewolf_kill])
 
         # Witch action
         witch_action = WitchAction(
             actor=2, day=1, action_type=WitchActionType.PASS
         )
-        witch_sp = WitchActionSubPhase(action=witch_action)
+        witch_sp = SubPhaseLog(micro_phase=SubPhase.WITCH_ACTION, events=[witch_action])
 
         # Guard action
         guard_action = GuardAction(actor=1, day=1, target=3)
-        guard_sp = GuardActionSubPhase(action=guard_action)
+        guard_sp = SubPhaseLog(micro_phase=SubPhase.GUARD_ACTION, events=[guard_action])
 
         # Seer action
         seer_action = SeerAction(actor=3, day=1, target=0, result=SeerResult.WEREWOLF)
-        seer_sp = SeerActionSubPhase(action=seer_action)
+        seer_sp = SubPhaseLog(micro_phase=SubPhase.SEER_ACTION, events=[seer_action])
 
         # Night resolution - player 5 dies
         night_resolution = NightResolution(day=1, deaths=[5])
-        resolution_sp = NightResolutionSubPhase(resolution=night_resolution)
+        resolution_sp = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[night_resolution])
 
-        night1 = NightPhase(
-            night_number=1,
+        night1 = PhaseLog(
+            number=1,
+            kind=Phase.NIGHT,
             subphases=[werewolf_sp, witch_sp, guard_sp, seer_sp, resolution_sp],
         )
         log.add_phase(night1)
@@ -888,29 +549,29 @@ class TestIntegration:
         log = GameEventLog(player_count=12)
 
         # Sheriff campaign speeches
-        speech1 = Speech(actor=0, day=1, micro_phase=MicroPhase.CAMPAIGN, content="I should be Sheriff!")
-        speech2 = Speech(actor=3, day=1, micro_phase=MicroPhase.CAMPAIGN, content="Vote for me!")
-        campaign = CampaignSubPhase(speeches=[speech1, speech2])
+        speech1 = Speech(actor=0, day=1, micro_phase=SubPhase.CAMPAIGN, content="I should be Sheriff!")
+        speech2 = Speech(actor=3, day=1, micro_phase=SubPhase.CAMPAIGN, content="Vote for me!")
+        campaign = SubPhaseLog(micro_phase=SubPhase.CAMPAIGN, events=[speech1, speech2])
 
         # Opt outs
         opt_out = SheriffOptOut(actor=5, day=1)
-        opt_out_sp = OptOutSubPhase(opt_outs=[opt_out])
+        opt_out_sp = SubPhaseLog(micro_phase=SubPhase.OPT_OUT, events=[opt_out])
 
         # Sheriff election
         election = SheriffElection(day=1, winner=0)
-        election_sp = SheriffElectionSubPhase(election=election)
+        election_sp = SubPhaseLog(micro_phase=SubPhase.SHERIFF_ELECTION, events=[election])
 
         # Death announcement
         announcement = DeathAnnouncement(day=1, dead_players=[7])
-        death_sp = DeathAnnouncementSubPhase(announcement=announcement)
+        death_sp = SubPhaseLog(micro_phase=SubPhase.DEATH_ANNOUNCEMENT, events=[announcement])
 
         # Last words
-        last_words = Speech(actor=7, day=1, micro_phase=MicroPhase.LAST_WORDS, content="I was the Guard!")
-        last_words_sp = LastWordsSubPhase(speeches=[last_words])
+        last_words = Speech(actor=7, day=1, micro_phase=SubPhase.LAST_WORDS, content="I was the Guard!")
+        last_words_sp = SubPhaseLog(micro_phase=SubPhase.LAST_WORDS, events=[last_words])
 
         # Discussion
-        discussion_speech = Speech(actor=3, day=1, micro_phase=MicroPhase.DISCUSSION, content="Player 0 is suspicious!")
-        discussion = DiscussionSubPhase(speeches=[discussion_speech])
+        discussion_speech = Speech(actor=3, day=1, micro_phase=SubPhase.DISCUSSION, content="Player 0 is suspicious!")
+        discussion = SubPhaseLog(micro_phase=SubPhase.DISCUSSION, events=[discussion_speech])
 
         # Voting
         votes = [
@@ -919,14 +580,15 @@ class TestIntegration:
             Vote(actor=2, day=1, target=3),
             Vote(actor=4, day=1, target=None),  # abstain
         ]
-        voting = VotingSubPhase(votes=votes)
+        voting = SubPhaseLog(micro_phase=SubPhase.VOTING, events=votes)
 
         # Victory check
         victory_check = VictoryCheck(phase=Phase.DAY, is_game_over=False)
-        victory_sp = VictoryCheckSubPhase(check=victory_check)
+        victory_sp = SubPhaseLog(micro_phase=SubPhase.VICTORY_CHECK, events=[victory_check])
 
-        day1 = DayPhase(
-            day_number=1,
+        day1 = PhaseLog(
+            number=1,
+            kind=Phase.DAY,
             subphases=[
                 campaign,
                 opt_out_sp,
@@ -956,18 +618,18 @@ class TestIntegration:
 
         # Night 1 with deaths
         night_resolution = NightResolution(day=1, deaths=[5])
-        resolution_sp = NightResolutionSubPhase(resolution=night_resolution)
-        night1 = NightPhase(night_number=1, subphases=[resolution_sp])
+        resolution_sp = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[night_resolution])
+        night1 = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[resolution_sp])
         log.add_phase(night1)
 
         # Day 1
-        day1 = DayPhase(day_number=1)
+        day1 = PhaseLog(number=1, kind=Phase.DAY)
         log.add_phase(day1)
 
         # Night 2 with deaths
         night_resolution2 = NightResolution(day=2, deaths=[7, 8])
-        resolution_sp2 = NightResolutionSubPhase(resolution=night_resolution2)
-        night2 = NightPhase(night_number=2, subphases=[resolution_sp2])
+        resolution_sp2 = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[night_resolution2])
+        night2 = PhaseLog(number=2, kind=Phase.NIGHT, subphases=[resolution_sp2])
         log.add_phase(night2)
 
         # Game over
@@ -984,8 +646,8 @@ class TestIntegration:
 
         # Serialization test - verify YAML output is valid
         yaml_str = log.to_yaml(include_roles=False)
-        assert "NightPhase" in yaml_str or "night" in yaml_str
-        assert "DayPhase" in yaml_str or "day" in yaml_str
+        assert "NIGHT" in yaml_str or "night" in yaml_str
+        assert "DAY" in yaml_str or "day" in yaml_str
         assert "GameOver" in yaml_str or "GAME_OVER" in yaml_str
         assert "WEREWOLF" in yaml_str
         assert "deaths" in yaml_str.lower()

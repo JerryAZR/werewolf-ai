@@ -14,7 +14,7 @@ class Phase(str, Enum):
     GAME_OVER = "GAME_OVER"
 
 
-class MicroPhase(str, Enum):
+class SubPhase(str, Enum):
     """Micro phases within NIGHT and DAY."""
 
     # Night micro-phases
@@ -74,7 +74,7 @@ class GameEvent(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     day: int = 0
     phase: Phase
-    micro_phase: Optional[MicroPhase] = None
+    micro_phase: Optional[SubPhase] = None
     debug_info: Optional[str] = None  # JSON string for AI auditing
 
     def __str__(self) -> str:
@@ -110,7 +110,7 @@ class WitchAction(CharacterAction):
     """Witch performs an action."""
 
     phase: Phase = Phase.NIGHT
-    micro_phase: MicroPhase = MicroPhase.WITCH_ACTION
+    micro_phase: SubPhase = SubPhase.WITCH_ACTION
     action_type: WitchActionType  # ANTIDOTE, POISON, or PASS
     target: Optional[int] = None  # Target for antidote/poison, None for PASS
 
@@ -123,7 +123,7 @@ class SeerAction(CharacterAction):
     """Seer checks a player's identity."""
 
     phase: Phase = Phase.NIGHT
-    micro_phase: MicroPhase = MicroPhase.SEER_ACTION
+    micro_phase: SubPhase = SubPhase.SEER_ACTION
     target: int
     result: SeerResult
 
@@ -135,7 +135,7 @@ class Speech(CharacterAction):
     """Player speech."""
 
     phase: Phase = Phase.DAY
-    micro_phase: MicroPhase  # CAMPAIGN or DISCUSSION
+    micro_phase: SubPhase  # CAMPAIGN or DISCUSSION
     content: str
 
     def __str__(self) -> str:
@@ -147,7 +147,7 @@ class SheriffOptOut(CharacterAction):
     """A candidate drops out of the Sheriff race."""
 
     phase: Phase = Phase.DAY
-    micro_phase: MicroPhase = MicroPhase.OPT_OUT
+    micro_phase: SubPhase = SubPhase.OPT_OUT
 
     def __str__(self) -> str:
         return f"SheriffOptOut(actor={self.actor})"
@@ -157,7 +157,7 @@ class Vote(TargetAction):
     """A player casts their vote."""
 
     phase: Phase = Phase.DAY
-    micro_phase: MicroPhase = MicroPhase.VOTING
+    micro_phase: SubPhase = SubPhase.VOTING
     # target: Optional[int] = None  # Inherited from TargetAction, None = abstain
 
     def __str__(self) -> str:
@@ -170,7 +170,7 @@ class DeathResolution(CharacterAction):
     """Death is being processed with all associated actions."""
 
     phase: Phase = Phase.DAY
-    micro_phase: MicroPhase  # LAST_WORDS or BANNED_LAST_WORDS
+    micro_phase: SubPhase  # LAST_WORDS or BANNED_LAST_WORDS
     cause: DeathCause
     last_words: Optional[str] = None
     hunter_shoot_target: Optional[int] = None
@@ -188,7 +188,7 @@ class WerewolfKill(TargetAction):
     """Werewolves choose a target to kill."""
 
     phase: Phase = Phase.NIGHT
-    micro_phase: MicroPhase = MicroPhase.WEREWOLF_ACTION
+    micro_phase: SubPhase = SubPhase.WEREWOLF_ACTION
     # actor can be any werewolf seat
 
     def __str__(self) -> str:
@@ -201,7 +201,7 @@ class GuardAction(TargetAction):
     """Guard protects a player."""
 
     phase: Phase = Phase.NIGHT
-    micro_phase: MicroPhase = MicroPhase.GUARD_ACTION
+    micro_phase: SubPhase = SubPhase.GUARD_ACTION
     # target: Optional[int] = None  # Inherited from TargetAction, may skip
 
     def __str__(self) -> str:
@@ -214,7 +214,7 @@ class HunterShoot(TargetAction):
     """Hunter's shoot action (usually triggered on death)."""
 
     phase: Phase = Phase.DAY
-    micro_phase: MicroPhase = MicroPhase.LAST_WORDS
+    micro_phase: SubPhase = SubPhase.LAST_WORDS
     # target: Optional[int] = None  # Inherited from TargetAction, None = skipped
 
     def __str__(self) -> str:
@@ -244,7 +244,7 @@ class DeathAnnouncement(GameEvent):
     """Announcement of who died during the night."""
 
     phase: Phase = Phase.DAY
-    micro_phase: MicroPhase = MicroPhase.DEATH_ANNOUNCEMENT
+    micro_phase: SubPhase = SubPhase.DEATH_ANNOUNCEMENT
     dead_players: list[int] = Field(default_factory=list)  # Ordered by seat
     death_count: int = 0
 
@@ -256,7 +256,7 @@ class SheriffElection(GameEvent):
     """Sheriff election voting results."""
 
     phase: Phase = Phase.DAY
-    micro_phase: MicroPhase = MicroPhase.SHERIFF_ELECTION
+    micro_phase: SubPhase = SubPhase.SHERIFF_ELECTION
     candidates: list[int] = Field(default_factory=list)  # seats
     votes: dict[int, float] = Field(default_factory=dict)  # seat -> vote count (Sheriff = 1.5)
     winner: Optional[int] = None
@@ -269,7 +269,7 @@ class Banishment(GameEvent):
     """Voting has resulted in a banishment."""
 
     phase: Phase = Phase.DAY
-    micro_phase: MicroPhase = MicroPhase.VOTING
+    micro_phase: SubPhase = SubPhase.VOTING
     votes: dict[int, float] = Field(default_factory=dict)  # target -> vote count
     tied_players: list[int] = Field(default_factory=list)  # Empty if no tie; if non-empty, no banishment occurs
     banished: Optional[int] = None
@@ -282,7 +282,7 @@ class SheriffBadgeTransfer(GameEvent):
     """Sheriff badge is transferred."""
 
     phase: Phase = Phase.DAY
-    micro_phase: MicroPhase = MicroPhase.LAST_WORDS
+    micro_phase: SubPhase = SubPhase.LAST_WORDS
     to_player: Optional[int]  # None if badge dies with Sheriff
 
     def __str__(self) -> str:
@@ -293,7 +293,7 @@ class NightResolution(GameEvent):
     """Night phase has resolved with all deaths calculated."""
 
     phase: Phase = Phase.NIGHT
-    micro_phase: MicroPhase = MicroPhase.NIGHT_RESOLUTION
+    micro_phase: SubPhase = SubPhase.NIGHT_RESOLUTION
     deaths: list[int] = Field(default_factory=list)  # seats
 
     def __str__(self) -> str:
