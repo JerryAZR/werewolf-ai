@@ -90,9 +90,7 @@ Since this is an electronic game implementation, role actions do not need to be 
 ## Voting Rules
 
 - All living players must vote during the voting phase; **abstaining is allowed**.
-- Tie handling: Players with the most votes enter a PK (Player Kill) round.
-- PK Rules: Tied players speak again, followed by a revote by other players.
-- If the revote is still a tie, no one is banished this round.
+- Tie handling: If vote is tied, no one is banished.
 
 ## Hidden Identity Rules
 
@@ -171,8 +169,7 @@ Victory Check ─┬─ Villager Victory → Game Over
 ### Sheriff
 - Elected by majority vote on **Day 1** before any announcements. The election happens first, then night results are revealed.
 - **Eligibility**: The Sheriff election is held **before** death announcements. Any player can run (including players who died last night but haven't been announced yet).
-- **Vote Value**: The Sheriff's vote always counts as **1.5 votes** (not 1), which effectively breaks ties in their favor.
-- **PK Round**: In PK rounds, the Sheriff's vote still counts as 1.5 votes.
+- **Tie-Breaking**: The Sheriff's vote counts as 1.5 votes, breaking ties in their favor.
 - **Discussion Leader**: The Sheriff leads and organizes the day's discussion.
 - **Badge Transfer**: If the Sheriff is banished or killed at night, the badge can be passed to another player of their choice.
 - **No Win Condition Change**: The Sheriff does NOT change the player's original alignment. A werewolf Sheriff still wins with the Werewolf camp.
@@ -210,7 +207,7 @@ Werewolf has many variations. This game uses the following specific rules:
 | Rule Item | Our Implementation |
 |-----------|--------------------|
 | Sheriff Election | Held on Day 1 **before** death announcements; any player can run (including those who died last night but haven't been announced); majority vote; no abstention |
-| Sheriff Power | Tie-breaking vote (1.5 votes, **also applies in PK rounds**); leads discussion; badge transferable on death |
+| Sheriff Power | Tie-breaking vote (1.5 votes); leads discussion; badge transferable on death |
 | Hunter Skill | Activates on Werewolf kill or Banishment; Disabled by Poison; **Optional usage** |
 | Guard Skill | Cannot guard same person twice in a row; **Self-guard allowed** |
 | Witch Potions | One potion per night; Antidote invalid on self; **Poison allowed on First Night** |
@@ -219,7 +216,7 @@ Werewolf has many variations. This game uses the following specific rules:
 | Rule Item | Our Implementation |
 |-----------|--------------------|
 | Voting Method | Abstention allowed |
-| Tie Handling | PK round (respeech + revote); if still tied, no banishment |
+| Tie Handling | If tied, no banishment |
 | Night Last Words | Only for players dying on the First Night |
 | Day Last Words | Banished players always have last words |
 

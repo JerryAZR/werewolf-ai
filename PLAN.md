@@ -35,7 +35,7 @@ See [PHASES.md](PHASES.md) for detailed flow and special rules.
       roles.py        # Role definitions and abilities
       players.py      # AI player wrapper
       actions.py      # Night actions (kill, check, guard, etc.)
-      voting.py       # Voting logic, PK rounds, Sheriff election
+      voting.py       # Voting logic, Sheriff election
     ai/
       __init__.py
       client.py       # OpenAI-compatible API client
@@ -66,8 +66,6 @@ See [PHASES.md](PHASES.md) for detailed flow and special rules.
   3. Last words for First Night deaths
   4. Discussion (collect speeches)
   5. Voting with Sheriff 1.5 vote
-  6. PK round if tied
-  7. Victory check
 
 ### Phase 4: AI Integration
 - `AIClient`: OpenAI-compatible API wrapper with configurable base_url
@@ -97,7 +95,7 @@ See [PHASES.md](PHASES.md) for detailed flow and special rules.
 | `src/game/engine.py` | Main game loop |
 | `src/game/state.py` | State models |
 | `src/game/roles.py` | Role logic |
-| `src/game/voting.py` | Sheriff, voting, PK |
+| `src/game/voting.py` | Sheriff, voting |
 | `src/ai/client.py` | API client |
 | `src/cli/main.py` | CLI entry |
 
@@ -262,7 +260,7 @@ Use Hypothesis to verify invariants:
 Test complete phase flows:
 - Night resolution with poison + guard + antidote interactions
 - Sheriff election and badge transfer
-- PK voting with Sheriff 1.5 vote
+- Voting with Sheriff 1.5 vote
 - Victory condition triggers
 
 ### 6. AI Decision Audit Trail
@@ -311,7 +309,7 @@ A standalone tool that takes a game log (JSONL format) and verifies whether the 
 | Phase Sequence | Night→Day→Night transitions |
 | Role Actions | Players only perform actions their role allows |
 | Action Constraints | e.g., Guard can't guard same person twice |
-| Voting Rules | Sheriff 1.5 vote, PK rounds |
+| Voting Rules | Sheriff 1.5 vote |
 | Victory Conditions | Werewolves win when all gods OR all villagers dead |
 
 ### Key Design Points

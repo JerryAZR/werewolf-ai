@@ -155,13 +155,7 @@ Victory conditions are checked:
 
 1. All living players vote (abstention allowed, except Sheriff election)
 2. Count votes (Sheriff's vote = 1.5)
-3. Highest vote count is banished
-
-### PK Round (Tie)
-
-1. Tied players give speeches
-2. Revote
-3. If still tied: no one banished
+3. If tied, no one is banished
 
 ---
 
