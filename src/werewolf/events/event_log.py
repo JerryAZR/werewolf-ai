@@ -2,12 +2,11 @@
 
 from datetime import datetime
 from typing import Optional, Union, Annotated
-from pydantic import BaseModel, Field, Discriminator, Tag
+from pydantic import BaseModel, Field, Discriminator, Tag, model_validator
 
 from .game_events import (
     Phase,
     MicroPhase,
-    GameEvent,
     GameStart,
     WerewolfKill,
     WitchAction,
@@ -26,7 +25,7 @@ from .game_events import (
 
 
 # ============================================================================
-# Night Sub-Phases
+# Night Sub-Phases (data containers)
 # ============================================================================
 
 class WerewolfActionSubPhase(BaseModel):
@@ -112,11 +111,23 @@ NightSubPhase = Annotated[
 
 
 class NightPhase(BaseModel):
-    """Night phase with sub-phases in execution order."""
+    """Night phase container.
+
+    Night numbering rules:
+    - night_number must be >= 1
+    - Night 1 is the first night of the game
+    - There is no Night 0
+    """
 
     night_number: int
     phase: Phase = Phase.NIGHT
     subphases: list[NightSubPhase] = Field(default_factory=list)
+
+    @model_validator(mode='after')
+    def validate_night_number(self) -> "NightPhase":
+        if self.night_number < 1:
+            raise ValueError(f"night_number must be >= 1, got {self.night_number}")
+        return self
 
     @property
     def deaths(self) -> list[int]:
@@ -136,7 +147,7 @@ class NightPhase(BaseModel):
 
 
 # ============================================================================
-# Day Sub-Phases
+# Day Sub-Phases (data containers)
 # ============================================================================
 
 class CampaignSubPhase(BaseModel):
@@ -295,11 +306,23 @@ DaySubPhase = Annotated[
 
 
 class DayPhase(BaseModel):
-    """Day phase with sub-phases in execution order."""
+    """Day phase container.
+
+    Day numbering rules:
+    - day_number must be >= 1
+    - Day 1 is the first day of the game (after Night 1)
+    - There is no Day 0
+    """
 
     day_number: int
     phase: Phase = Phase.DAY
     subphases: list[DaySubPhase] = Field(default_factory=list)
+
+    @model_validator(mode='after')
+    def validate_day_number(self) -> "DayPhase":
+        if self.day_number < 1:
+            raise ValueError(f"day_number must be >= 1, got {self.day_number}")
+        return self
 
     @property
     def is_day1(self) -> bool:
@@ -421,6 +444,21 @@ class GameEventLog(BaseModel):
         with open(filepath, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
+        # Handle phase deserialization with proper type conversion
+        if "phases" in data and isinstance(data["phases"], list):
+            phases = []
+            for phase_data in data["phases"]:
+                if isinstance(phase_data, dict):
+                    if phase_data.get("phase") == "NIGHT":
+                        phases.append(NightPhase.model_validate(phase_data))
+                    elif phase_data.get("phase") == "DAY":
+                        phases.append(DayPhase.model_validate(phase_data))
+                    else:
+                        phases.append(phase_data)
+                else:
+                    phases.append(phase_data)
+            data["phases"] = phases
+
         return cls.model_validate(data)
 
     # =========================================================================
@@ -443,101 +481,6 @@ class GameEventLog(BaseModel):
                 return phase.day_number
         return 0
 
-    def get_current_phase(self) -> Optional[GamePhase]:
-        """Get the most recent phase."""
-        return self.phases[-1] if self.phases else None
-
-    def start_night(self, night_number: int) -> NightPhase:
-        """Start a new night phase."""
-        phase = NightPhase(night_number=night_number)
-        self.phases.append(phase)
-        return phase
-
-    def start_day(self, day_number: int) -> DayPhase:
-        """Start a new day phase."""
-        phase = DayPhase(day_number=day_number)
-        self.phases.append(phase)
-        return phase
-
-    # =========================================================================
-    # Add Events
-    # =========================================================================
-
-    def add_event(self, event: GameEvent) -> None:
-        """Add any game event to the log."""
-        if isinstance(event, GameStart):
-            self.game_start = event
-        elif isinstance(event, GameOver):
-            self.game_over = event
-        elif event.phase == Phase.NIGHT:
-            self._add_night_event(event)
-        elif event.phase == Phase.DAY:
-            self._add_day_event(event)
-
-    def _add_night_event(self, event: GameEvent) -> None:
-        """Add a night event to the current or new night."""
-        night_num = event.day
-
-        # Find or create the night phase
-        current = self.get_current_phase()
-        if current is None or (isinstance(current, NightPhase) and current.night_number != night_num):
-            self.start_night(night_num)
-
-        phase = self.phases[-1]
-        assert isinstance(phase, NightPhase)
-
-        if isinstance(event, WerewolfKill):
-            phase.subphases.append(WerewolfActionSubPhase(kill=event))
-        elif isinstance(event, WitchAction):
-            phase.subphases.append(WitchActionSubPhase(action=event))
-        elif isinstance(event, GuardAction):
-            phase.subphases.append(GuardActionSubPhase(action=event))
-        elif isinstance(event, SeerAction):
-            phase.subphases.append(SeerActionSubPhase(action=event))
-        elif isinstance(event, NightResolution):
-            phase.subphases.append(NightResolutionSubPhase(resolution=event))
-
-    def _add_day_event(self, event: GameEvent) -> None:
-        """Add a day event to the current or new day."""
-        day_num = event.day
-
-        # Find or create the day phase
-        current = self.get_current_phase()
-        if current is None or (isinstance(current, DayPhase) and current.day_number != day_num):
-            self.start_day(day_num)
-
-        phase = self.phases[-1]
-        assert isinstance(phase, DayPhase)
-
-        if isinstance(event, Speech):
-            if event.micro_phase == MicroPhase.CAMPAIGN:
-                sp = _find_or_create_subphase(phase.subphases, CampaignSubPhase)
-                sp.speeches.append(event)
-            elif event.micro_phase == MicroPhase.LAST_WORDS:
-                sp = _find_or_create_subphase(phase.subphases, LastWordsSubPhase)
-                sp.speeches.append(event)
-            elif event.micro_phase == MicroPhase.BANNED_LAST_WORDS:
-                phase.subphases.append(BanishedLastWordsSubPhase(speech=event))
-            else:  # DISCUSSION
-                sp = _find_or_create_subphase(phase.subphases, DiscussionSubPhase)
-                sp.speeches.append(event)
-        elif isinstance(event, SheriffOptOut):
-            sp = _find_or_create_subphase(phase.subphases, OptOutSubPhase)
-            sp.opt_outs.append(event)
-        elif isinstance(event, SheriffElection):
-            sp = _find_or_create_subphase(phase.subphases, SheriffElectionSubPhase)
-            sp.election = event
-        elif isinstance(event, Vote):
-            sp = _find_or_create_subphase(phase.subphases, VotingSubPhase)
-            sp.votes.append(event)
-        elif isinstance(event, DeathAnnouncement):
-            sp = _find_or_create_subphase(phase.subphases, DeathAnnouncementSubPhase)
-            sp.announcement = event
-
-    # =========================================================================
-    # Query Methods
-    # =========================================================================
-
     def get_night(self, night_number: int) -> Optional[NightPhase]:
         """Get a specific night phase."""
         for phase in self.phases:
@@ -551,6 +494,27 @@ class GameEventLog(BaseModel):
             if isinstance(phase, DayPhase) and phase.day_number == day_number:
                 return phase
         return None
+
+    def add_phase(self, phase: GamePhase) -> None:
+        """Add a phase to the log.
+
+        Args:
+            phase: NightPhase or DayPhase to add.
+
+        Raises:
+            ValueError: If a phase with the same number already exists.
+        """
+        if isinstance(phase, NightPhase):
+            if self.get_night(phase.night_number) is not None:
+                raise ValueError(f"Night {phase.night_number} already exists")
+        elif isinstance(phase, DayPhase):
+            if self.get_day(phase.day_number) is not None:
+                raise ValueError(f"Day {phase.day_number} already exists")
+        self.phases.append(phase)
+
+    # =========================================================================
+    # Query Methods
+    # =========================================================================
 
     def get_all_deaths(self) -> list[int]:
         """Get all deaths throughout the game."""
@@ -575,7 +539,7 @@ class GameEventLog(BaseModel):
         for phase in self.phases:
             if isinstance(phase, DayPhase) and phase.is_day1:
                 for sp in phase.subphases:
-                    if isinstance(sp, SheriffElectionSubPhase) and sp.election and sp.election.winner:
+                    if isinstance(sp, SheriffElectionSubPhase) and sp.election and sp.election.winner is not None:
                         sheriffs[phase.day_number] = sp.election.winner
                         break
         return sheriffs
@@ -598,13 +562,3 @@ class GameEventLog(BaseModel):
             "total_deaths": len(self.get_all_deaths()),
         }
         return data
-
-
-def _find_or_create_subphase(subphases: list[DaySubPhase], cls: type) -> DaySubPhase:
-    """Find existing subphase of given class or create new one."""
-    for sp in subphases:
-        if isinstance(sp, cls):
-            return sp
-    instance = cls()
-    subphases.append(instance)
-    return instance
