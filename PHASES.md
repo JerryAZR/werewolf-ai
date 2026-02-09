@@ -27,11 +27,11 @@
 | Campaign | Day 1 only: Candidates give speeches |
 | Opt-Out | Day 1 only: Candidates may drop out |
 | Sheriff Election | Day 1 only: Vote for Sheriff |
-| Death Announcement | Reveal who died (name only, no cause/role) |
-| Last Words | Night deaths speak (Night 1 only) |
+| Death Resolution | Handle all deaths (last words, hunter shoot, badge transfer) |
 | Discussion | Players speak in order |
 | Voting | Vote to banish |
-| Banished Last Words | Day death speaks before leaving |
+
+**Note:** Last Words, Banished Last Words, Hunter Shoot, and Badge Transfer are now consolidated into the Death Resolution sub-phase.
 
 ---
 
@@ -60,11 +60,11 @@
 | 1. Campaign | Candidates give speeches |
 | 2. Opt-Out | Candidates may drop out of the race |
 | 3. Sheriff Election | Vote for Sheriff (no abstention) |
-| 4. Death Announcement | Reveal who died (name only, no cause/role) |
-| 5. Last Words | Night deaths speak |
-| 6. Discussion | Players speak in order |
-| 7. Voting | Vote to banish |
-| 8. Banished Last Words | Player speaks before leaving |
+| 4. Death Resolution | Handle all deaths (announce, last words, hunter shoot, badge transfer) |
+| 5. Discussion | Players speak in order |
+| 6. Voting | Vote to banish |
+
+**Note:** Victory check happens automatically after Death Resolution and after voting. If game ends, no further events occur.
 
 ---
 
@@ -72,12 +72,11 @@
 
 | Step | Description |
 |------|-------------|
-| 1. Death Announcement | Reveal who died (name only, no cause/role) |
+| 1. Death Resolution | Handle all deaths (announce, last words, hunter shoot, badge transfer) |
 | 2. Discussion | Players speak in order |
 | 3. Voting | Vote to banish |
-| 4. Banished Last Words | Player speaks before leaving |
 
-**Note:** Victory check happens automatically after deaths (Day 1 & 2+) and after voting. If game ends, no further events occur.
+**Note:** Victory check happens automatically after Death Resolution and after voting. If game ends, no further events occur.
 
 ---
 
@@ -102,13 +101,10 @@ stateDiagram-v2
     [*] --> Campaign
     Campaign --> OptOut
     OptOut --> SheriffElection
-    SheriffElection --> DeathAnnouncement
-    DeathAnnouncement --> LastWords: Night 1 only
-    LastWords --> Discussion
+    SheriffElection --> DeathResolution
+    DeathResolution --> Discussion
     Discussion --> Voting
-    Voting --> BanishedLastWords: If banished
-    BanishedLastWords --> VictoryCheck
-    Discussion --> VictoryCheck: No banishment
+    Voting --> VictoryCheck
     VictoryCheck --> WerewolfAction: Continue to Night
     VictoryCheck --> [*]: Game Over
 ```
@@ -117,12 +113,10 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-    [*] --> DeathAnnouncement
-    DeathAnnouncement --> Discussion
+    [*] --> DeathResolution
+    DeathResolution --> Discussion
     Discussion --> Voting
-    Voting --> BanishedLastWords: If banished
-    BanishedLastWords --> VictoryCheck
-    Discussion --> VictoryCheck: No banishment
+    Voting --> VictoryCheck
     VictoryCheck --> WerewolfAction: Continue to Night
     VictoryCheck --> [*]: Game Over
 ```
@@ -132,9 +126,11 @@ stateDiagram-v2
 ## Victory Check
 
 Victory conditions are checked:
-- After death announcement (if all werewolves killed, villagers win)
+- After Death Resolution (if all werewolves killed, villagers win)
 - After banishment (if all werewolves banished, villagers win)
 - After deaths (if all gods killed or all ordinary villagers killed, werewolves win)
+
+**Note:** Night deaths include cause information (WEREWOLF_KILL or POISON), which affects whether Hunter can shoot.
 
 ---
 
@@ -173,8 +169,8 @@ Victory conditions are checked:
 
 ### Death Events
 
-- Night deaths: Announced at day start, resolved together
-- Day deaths: Occur after vote-out or Hunter shoot
-- Hunter shoot: Happens immediately when triggered
-- Sheriff badge: Transferred by Sheriff (if alive) or inherited
-- Multiple death events: Processed in any order
+- Night deaths: Announced and resolved together in Death Resolution phase
+- Day deaths: Occur after vote-out or Hunter shoot (during Death Resolution)
+- Hunter shoot: Included in DeathEvent when Hunter dies (only if killed by werewolves)
+- Sheriff badge: Transfer included in DeathEvent when Sheriff dies
+- Last words: Included in DeathEvent (Night 1 only for night deaths, always for day deaths)
