@@ -232,12 +232,16 @@ SHERIFF: Player at seat {context.sheriff}"""
 
         living_seats_str = ', '.join(map(str, living_players_sorted))
 
+        sheriff_info = ""
+        if context.sheriff is not None:
+            sheriff_info = f"\nSheriff: Player at seat {context.sheriff} holds the sheriff badge (1.5x vote weight)."
+
         user = f"""=== Night {context.day} - Seer Action ===
 
 YOUR IDENTITY:
   You are the Seer at seat {for_seat}
 
-LIVING PLAYERS (seat numbers): {living_seats_str}{sheriff}
+LIVING PLAYERS (seat numbers): {living_seats_str}{sheriff_info}
 
 AVAILABLE ACTIONS:
 

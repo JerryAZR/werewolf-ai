@@ -1,0 +1,355 @@
+"""Stub AI implementations for testing and fallback modes.
+
+These AIs generate valid random actions without calling LLMs.
+Useful for:
+- Integration tests (full game flow without LLM calls)
+- Development testing
+- Fallback when LLM is unavailable
+
+A StubPlayer can handle ANY phase - it parses the prompt to understand
+what's being asked and returns a valid response.
+"""
+
+import random
+import re
+from typing import Optional, Protocol
+
+from werewolf.events.game_events import (
+    Phase,
+    SubPhase,
+)
+from werewolf.models.player import Role
+
+
+class Participant(Protocol):
+    """Protocol for AI or human participants."""
+
+    async def decide(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        hint: Optional[str] = None,
+    ) -> str:
+        """Make a decision and return raw response string."""
+        ...
+
+
+class StubPlayer:
+    """A stub AI player that can handle ANY game phase.
+
+    Parses the prompt to understand what action is being requested,
+    then generates a valid random response. Handles retries gracefully.
+    """
+
+    def __init__(self, seed: Optional[int] = None):
+        """Initialize stub player with optional random seed."""
+        if seed is not None:
+            random.seed(seed)
+        # Track state across calls for more realistic behavior
+        self._last_response: Optional[str] = None
+
+    async def decide(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        hint: Optional[str] = None,
+    ) -> str:
+        """Parse prompt and return a valid action string."""
+        combined = f"{system_prompt}\n{user_prompt}"
+
+        # Detect which phase/subphase from the prompt
+        subphase = self._detect_subphase(combined)
+
+        response = await self._generate_response(subphase, combined, hint)
+
+        # If hint provided, validate response and retry if invalid
+        if hint and not self._is_valid_for_subphase(response, subphase, combined):
+            # Try again with a more careful choice
+            response = await self._generate_response(subphase, combined, hint)
+
+        self._last_response = response
+        return response
+
+    def _detect_subphase(self, text: str) -> SubPhase:
+        """Detect which subphase from prompt text."""
+        text_lower = text.lower()
+
+        # Extract key markers for classification
+        has_discussion = "discussion" in text_lower
+        has_speech = "speech" in text_lower
+        has_vote = "vote" in text_lower
+
+        # Check for specific phase markers in prompts (more specific first)
+        if "werewolf kill decision" in text_lower or "target to kill" in text_lower:
+            return SubPhase.WEREWOLF_ACTION
+        if "witch action" in text_lower or "antidote" in text_lower or "poison" in text_lower:
+            return SubPhase.WITCH_ACTION
+        if "guard" in text_lower and "protect" in text_lower:
+            return SubPhase.GUARD_ACTION
+        if "seer" in text_lower and "check" in text_lower:
+            return SubPhase.SEER_ACTION
+
+        # Check for campaign/sheriff phases before discussion/voting
+        # Sheriff election requires more specific "sheriff vote" pattern
+        if "campaign" in text_lower or "sheriff" in text_lower:
+            if "opt-out" in text_lower or "withdraw" in text_lower:
+                return SubPhase.OPT_OUT
+            # Sheriff vote: need both sheriff AND vote-for pattern (not just "vote weight")
+            if ("sheriff vote" in text_lower or
+                "vote for sheriff" in text_lower or
+                "sheriff election" in text_lower):
+                return SubPhase.SHERIFF_ELECTION
+            if "campaign" in text_lower:
+                return SubPhase.CAMPAIGN
+
+        # Check death resolution
+        if "death" in text_lower:
+            if "last words" in text_lower:
+                return SubPhase.DEATH_RESOLUTION
+
+        # Check discussion BEFORE voting (more specific patterns)
+        # Discussion: has both "discussion" AND "speech"
+        # Voting: only "vote", no "discussion"
+        if has_discussion and has_speech:
+            return SubPhase.DISCUSSION
+        if "speaking during day" in text_lower:
+            return SubPhase.DISCUSSION
+
+        # Check voting (less specific - contains "vote")
+        if has_vote or "banish" in text_lower:
+            return SubPhase.VOTING
+
+        # Fallback based on action keywords
+        if "antidote" in text_lower or "poison" in text_lower:
+            return SubPhase.WITCH_ACTION
+            return SubPhase.WITCH_ACTION
+        if "protect" in text_lower:
+            return SubPhase.GUARD_ACTION
+        if "check" in text_lower:
+            return SubPhase.SEER_ACTION
+        if has_speech:
+            return SubPhase.CAMPAIGN
+
+        return SubPhase.DISCUSSION  # Safe fallback
+
+    async def _generate_response(
+        self,
+        subphase: SubPhase,
+        prompt: str,
+        hint: Optional[str] = None,
+    ) -> str:
+        """Generate appropriate response for the subphase."""
+        generators = {
+            SubPhase.WEREWOLF_ACTION: self._werewolf_response,
+            SubPhase.WITCH_ACTION: self._witch_response,
+            SubPhase.GUARD_ACTION: self._guard_response,
+            SubPhase.SEER_ACTION: self._seer_response,
+            SubPhase.CAMPAIGN: self._speech_response,
+            SubPhase.OPT_OUT: self._opt_out_response,
+            SubPhase.SHERIFF_ELECTION: self._sheriff_vote_response,
+            SubPhase.DEATH_RESOLUTION: self._last_words_response,
+            SubPhase.DISCUSSION: self._speech_response,
+            SubPhase.VOTING: self._vote_response,
+            SubPhase.BANISHMENT_RESOLUTION: self._last_words_response,
+        }
+
+        generator = generators.get(subphase, self._vote_response)
+        return await generator(prompt)
+
+    def _is_valid_for_subphase(self, response: str, subphase: SubPhase, prompt: str) -> bool:
+        """Check if response format is valid for the subphase."""
+        response = response.strip().lower()
+
+        valid_formats = {
+            SubPhase.WEREWOLF_ACTION: lambda r: r == "-1" or r.isdigit(),
+            SubPhase.WITCH_ACTION: lambda r: r in ["pass"] or r.startswith(("antidote", "poison")),
+            SubPhase.GUARD_ACTION: lambda r: r == "-1" or r.isdigit(),
+            SubPhase.SEER_ACTION: lambda r: r.isdigit(),
+            SubPhase.CAMPAIGN: lambda r: len(r) > 10,  # Real speech
+            SubPhase.OPT_OUT: lambda r: r in ["run", "opt-out", "stay"],
+            SubPhase.SHERIFF_ELECTION: lambda r: r.isdigit() or r == "abstain",
+            SubPhase.DEATH_RESOLUTION: lambda r: len(r) > 5,  # Real last words
+            SubPhase.DISCUSSION: lambda r: len(r) > 10,
+            SubPhase.VOTING: lambda r: r.isdigit() or r == "abstain",
+            SubPhase.BANISHMENT_RESOLUTION: lambda r: len(r) > 5,
+        }
+
+        validator = valid_formats.get(subphase, lambda r: True)
+        return validator(response)
+
+    # ------------------------------------------------------------------
+    # Phase-specific response generators
+    # ------------------------------------------------------------------
+
+    async def _werewolf_response(self, prompt: str) -> str:
+        """Generate werewolf kill decision."""
+        if random.random() < 0.1:  # 10% skip chance
+            return "-1"
+
+        living = self._extract_seats(prompt, "living", allow_empty=True)
+        if living:
+            return str(random.choice(living))
+        return "0"
+
+    async def _witch_response(self, prompt: str) -> str:
+        """Generate witch action (PASS, ANTIDOTE, POISON)."""
+        prompt_lower = prompt.lower()
+
+        # Check availability
+        antidote_available = "antidote" in prompt_lower and "available" in prompt_lower
+        poison_available = "poison" in prompt_lower and "available" in prompt_lower
+
+        # Extract werewolf target if antidote is an option
+        kill_target = self._extract_single_seat(prompt, "werewolf kill target")
+
+        roll = random.random()
+        antidote_chance = 0.3 if antidote_available else 0
+        poison_chance = 0.3 if poison_available else 0
+
+        if kill_target is not None and antidote_available and roll < antidote_chance:
+            return f"ANTIDOTE {kill_target}"
+
+        if poison_available and antidote_chance <= roll < antidote_chance + poison_chance:
+            living = self._extract_seats(prompt, "living")
+            if living:
+                return f"POISON {random.choice(living)}"
+
+        return "PASS"
+
+    async def _guard_response(self, prompt: str) -> str:
+        """Generate guard protection target."""
+        if random.random() < 0.1:  # 10% skip chance
+            return "-1"
+
+        living = self._extract_seats(prompt, "living")
+        if living:
+            return str(random.choice(living))
+        return "-1"
+
+    async def _seer_response(self, prompt: str) -> str:
+        """Generate seer check target."""
+        living = self._extract_seats(prompt, "living")
+        if living:
+            return str(random.choice(living))
+        return "0"
+
+    async def _speech_response(self, prompt: str) -> str:
+        """Generate discussion/campaign speech."""
+        speeches = [
+            "I don't have much to say yet. I'll be watching carefully.",
+            "I'm leaning toward voting for someone suspicious, but I'm not ready to share yet.",
+            "The werewolves have been quiet today. That's suspicious behavior.",
+            "We should trust claims that are backed by evidence.",
+            "I think we need more information before making a decision.",
+            "Let's not jump to conclusions. Stay rational everyone.",
+            "I'll share my thoughts after hearing from more players.",
+            "Something feels off about the early discussion.",
+        ]
+        return random.choice(speeches)
+
+    async def _opt_out_response(self, prompt: str) -> str:
+        """Generate sheriff candidacy decision."""
+        if random.random() < 0.2:  # 20% opt-out chance
+            return "OPT-OUT"
+        return "RUN"
+
+    async def _sheriff_vote_response(self, prompt: str) -> str:
+        """Generate sheriff election vote."""
+        if random.random() < 0.05:  # 5% abstain chance
+            return "ABSTAIN"
+
+        candidates = self._extract_seats(prompt, "candidates", allow_empty=True)
+        if candidates:
+            return str(random.choice(candidates))
+        return "0"
+
+    async def _last_words_response(self, prompt: str) -> str:
+        """Generate last words."""
+        statements = [
+            "I am the Seer. Someone nearby is a werewolf!",
+            "Trust those who have been protective of the village.",
+            "I didn't get to do much this game. Good luck everyone.",
+            "The werewolves are being clever, but I've been watching.",
+            "I've been trying to help the village survive.",
+            "I regret not speaking up more earlier. Stay vigilant.",
+            "This is a tough game. Trust your instincts.",
+        ]
+        return random.choice(statements)
+
+    async def _vote_response(self, prompt: str) -> str:
+        """Generate voting decision."""
+        if random.random() < 0.1:  # 10% abstain chance
+            return "ABSTAIN"
+
+        living = self._extract_seats(prompt, "living")
+        if living:
+            return str(random.choice(living))
+        return "ABSTAIN"
+
+    # ------------------------------------------------------------------
+    # Helper methods for parsing prompts
+    # ------------------------------------------------------------------
+
+    def _extract_seats(self, prompt: str, category: str, allow_empty: bool = False) -> list[int]:
+        """Extract seat numbers for a category (living, candidates, etc.)."""
+        # Try various patterns
+        patterns = [
+            rf'{category}.*?:\s*([0-9,\s]+?)(?:\n|$)',
+            rf'{category}.*?(?:seats?|numbers?).*?:\s*([0-9,\s]+?)(?:\n|$)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, prompt, re.IGNORECASE)
+            if match:
+                seats = re.findall(r'\d+', match.group(1))
+                return [int(s) for s in seats]
+
+        # Also check for bullet list format
+        if allow_empty:
+            bullet_match = re.search(r'(?:^|\n)\s*[-•*]\s*(\d+)', prompt)
+            if bullet_match:
+                return [int(bullet_match.group(1))]
+
+        return []
+
+    def _extract_single_seat(self, prompt: str, description: str) -> Optional[int]:
+        """Extract a single seat number mentioned in context."""
+        # Look for "WEREWOLF KILL TARGET: Player at seat X"
+        patterns = [
+            rf'{description}.*?seat\s*(\d+)',
+            rf'target.*?seat\s*(\d+)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, prompt, re.IGNORECASE)
+            if match:
+                return int(match.group(1))
+
+        return None
+
+
+# ============================================================================
+# Factory function for convenience
+# ============================================================================
+
+def create_stub_player(seed: Optional[int] = None) -> StubPlayer:
+    """Create a stub player with optional random seed."""
+    return StubPlayer(seed=seed)
+
+
+# ============================================================================
+# Deprecated: Keep old class names for backward compatibility
+# ============================================================================
+
+WerewolfAI = type("WerewolfAI", (StubPlayer,), {})
+WitchAI = type("WitchAI", (StubPlayer,), {})
+GuardAI = type("GuardAI", (StubPlayer,), {})
+SeerAI = type("SeerAI", (StubPlayer,), {})
+SheriffCandidateAI = type("SheriffCandidateAI", (StubPlayer,), {})
+SheriffVoterAI = type("SheriffVoterAI", (StubPlayer,), {})
+DiscussionAI = type("DiscussionAI", (StubPlayer,), {})
+VoterAI = type("VoterAI", (StubPlayer,), {})
+LastWordsAI = type("LastWordsAI", (StubPlayer,), {})
+HunterShootAI = type("HunterShootAI", (StubPlayer,), {})
+BadgeTransferAI = type("BadgeTransferAI", (StubPlayer,), {})
+StubAI = StubPlayer

@@ -361,8 +361,8 @@ Enter your choice (e.g., "7" or "SKIP"):"""
         """
         cleaned = raw_response.strip().upper()
 
-        # Parse SKIP
-        if cleaned == "SKIP":
+        # Parse SKIP or PASS
+        if cleaned in ("SKIP", "PASS", "-1"):
             return None
 
         # Parse seat number
