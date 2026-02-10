@@ -13,6 +13,10 @@ from werewolf.events import (
 from werewolf.models import Player
 from werewolf.engine import GameState, EventCollector
 
+# Import validator for type hints (avoid circular import)
+if TYPE_CHECKING:
+    from werewolf.engine.validator import GameValidator
+
 
 class Participant(Protocol):
     """A player (AI or human) that can make decisions."""
@@ -30,9 +34,14 @@ class Participant(Protocol):
 class DayScheduler:
     """Orchestrates the day phase: Campaign -> OptOut -> SheriffElection -> DeathResolution -> Discussion -> Voting -> VictoryCheck"""
 
-    def __init__(self):
-        """Initialize the DayScheduler."""
-        pass
+    def __init__(self, validator: Optional["GameValidator"] = None):
+        """Initialize the DayScheduler.
+
+        Args:
+            validator: Optional validator for runtime rule checking.
+                       Pass None or NoOpValidator for production (zero overhead).
+        """
+        self._validator = validator
 
     async def run_day(
         self,
@@ -66,6 +75,11 @@ class DayScheduler:
             night_deaths = {}
         # Update collector day
         collector.day = state.day
+
+        # Hook: day start
+        if self._validator:
+            await self._validator.on_phase_start(Phase.DAY, state.day, state)
+
         collector.create_phase_log(Phase.DAY)
 
         # Build participants sequence from dict for handlers
@@ -74,6 +88,11 @@ class DayScheduler:
         # Run Day 1 special phases
         if state.day == 1:
             # Campaign - all living players are candidates
+
+            # Hook: subphase start - Campaign
+            if self._validator:
+                await self._validator.on_subphase_start(SubPhase.CAMPAIGN, state.day, state)
+
             sheriff_candidates = sorted(state.living_players)
             campaign_result = await self._run_campaign(
                 state=state,
@@ -83,7 +102,18 @@ class DayScheduler:
             collector.add_subphase_log(campaign_result.subphase_log)
             state.apply_events(campaign_result.subphase_log.events)
 
+            # Hook: subphase end - Campaign
+            if self._validator:
+                await self._validator.on_subphase_end(
+                    SubPhase.CAMPAIGN, state.day, Phase.DAY, state, collector
+                )
+
             # OptOut - candidates decide whether to stay in race
+
+            # Hook: subphase start - OptOut
+            if self._validator:
+                await self._validator.on_subphase_start(SubPhase.OPT_OUT, state.day, state)
+
             opt_out_result = await self._run_opt_out(
                 state=state,
                 participants=all_participants,
@@ -92,6 +122,12 @@ class DayScheduler:
             collector.add_subphase_log(opt_out_result.subphase_log)
             state.apply_events(opt_out_result.subphase_log.events)
 
+            # Hook: subphase end - OptOut
+            if self._validator:
+                await self._validator.on_subphase_end(
+                    SubPhase.OPT_OUT, state.day, Phase.DAY, state, collector
+                )
+
             # Determine remaining candidates after opt-outs
             remaining_candidates = [
                 seat for seat in sheriff_candidates
@@ -99,6 +135,11 @@ class DayScheduler:
             ]
 
             # SheriffElection - vote for sheriff
+
+            # Hook: subphase start - SheriffElection
+            if self._validator:
+                await self._validator.on_subphase_start(SubPhase.SHERIFF_ELECTION, state.day, state)
+
             sheriff_result = await self._run_sheriff_election(
                 state=state,
                 participants=all_participants,
@@ -107,7 +148,18 @@ class DayScheduler:
             collector.add_subphase_log(sheriff_result.subphase_log)
             state.apply_events(sheriff_result.subphase_log.events)
 
+            # Hook: subphase end - SheriffElection
+            if self._validator:
+                await self._validator.on_subphase_end(
+                    SubPhase.SHERIFF_ELECTION, state.day, Phase.DAY, state, collector
+                )
+
         # DeathResolution - process night deaths (from NightOutcome)
+
+        # Hook: subphase start - DeathResolution
+        if self._validator:
+            await self._validator.on_subphase_start(SubPhase.DEATH_RESOLUTION, state.day, state)
+
         death_result = await self._run_death_resolution(
             state=state,
             participants=participants,
@@ -117,7 +169,23 @@ class DayScheduler:
         # Apply death events to state (handles hunter shots and badge transfers)
         state.apply_events(death_result.subphase_log.events)
 
+        # Hook: subphase end - DeathResolution
+        if self._validator:
+            await self._validator.on_subphase_end(
+                SubPhase.DEATH_RESOLUTION, state.day, Phase.DAY, state, collector
+            )
+
+        # Hook: death chain complete (for day deaths as well)
+        death_seats = [e.actor for e in death_result.subphase_log.events if hasattr(e, 'actor')]
+        if self._validator and death_seats:
+            await self._validator.on_death_chain_complete(death_seats, state)
+
         # Discussion - living players speak
+
+        # Hook: subphase start - Discussion
+        if self._validator:
+            await self._validator.on_subphase_start(SubPhase.DISCUSSION, state.day, state)
+
         discussion_result = await self._run_discussion(
             state=state,
             participants=all_participants,
@@ -125,16 +193,37 @@ class DayScheduler:
         collector.add_subphase_log(discussion_result.subphase_log)
         state.apply_events(discussion_result.subphase_log.events)
 
+        # Hook: subphase end - Discussion
+        if self._validator:
+            await self._validator.on_subphase_end(
+                SubPhase.DISCUSSION, state.day, Phase.DAY, state, collector
+            )
+
         # Voting - banishment vote
+
+        # Hook: subphase start - Voting
+        if self._validator:
+            await self._validator.on_subphase_start(SubPhase.VOTING, state.day, state)
+
         voting_result = await self._run_voting(
             state=state,
             participants=all_participants,
         )
         collector.add_subphase_log(voting_result.subphase_log)
 
+        # Hook: subphase end - Voting
+        if self._validator:
+            await self._validator.on_subphase_end(
+                SubPhase.VOTING, state.day, Phase.DAY, state, collector
+            )
+
         # Process banishment death if there was a banishment
         banished_seat = self._get_banished_seat(voting_result.subphase_log.events)
         if banished_seat is not None:
+            # Hook: subphase start - BanishmentResolution
+            if self._validator:
+                await self._validator.on_subphase_start(SubPhase.BANISHMENT_RESOLUTION, state.day, state)
+
             # Run banishment resolution to get death event
             banishment_result = await self._run_banishment_resolution(
                 state=state,
@@ -143,14 +232,29 @@ class DayScheduler:
             )
             collector.add_subphase_log(banishment_result.subphase_log)
             state.apply_events(banishment_result.subphase_log.events)
+
+            # Hook: subphase end - BanishmentResolution
+            if self._validator:
+                await self._validator.on_subphase_end(
+                    SubPhase.BANISHMENT_RESOLUTION, state.day, Phase.DAY, state, collector
+                )
         else:
             # No banishment, apply voting events (for Vote events)
             state.apply_events(voting_result.subphase_log.events)
 
         # Victory check
         is_over, winner = state.is_game_over()
+
+        # Hook: victory check
+        if self._validator:
+            await self._validator.on_victory_check(state, is_over, winner)
+
         if is_over:
             self._finalize_game(collector, winner)
+
+        # Hook: day end
+        if self._validator:
+            await self._validator.on_phase_end(Phase.DAY, state.day, state, collector)
 
         return state, collector
 

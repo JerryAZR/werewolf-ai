@@ -7,7 +7,7 @@ Night order:
 4. Resolve deaths via NightActionResolver
 """
 
-from typing import Protocol, Optional
+from typing import Protocol, Optional, TYPE_CHECKING
 
 from werewolf.engine import (
     GameState,
@@ -25,6 +25,10 @@ from werewolf.events import (
     DeathCause,
 )
 from werewolf.models.player import Role
+
+# Import validator for type hints (avoid circular import)
+if TYPE_CHECKING:
+    from werewolf.engine.validator import GameValidator
 
 # Import handlers
 from werewolf.handlers.werewolf_handler import (
@@ -63,14 +67,20 @@ class Participant(Protocol):
 class NightScheduler:
     """Orchestrates the night phase: Werewolf -> Witch -> Guard/Seer (parallel) -> Resolution."""
 
-    def __init__(self):
-        """Initialize the night scheduler with handlers."""
+    def __init__(self, validator: Optional["GameValidator"] = None):
+        """Initialize the night scheduler with handlers.
+
+        Args:
+            validator: Optional validator for runtime rule checking.
+                       Pass None or NoOpValidator for production (zero overhead).
+        """
         self._werewolf_handler = WerewolfHandler()
         self._witch_handler = WitchHandler()
         self._guard_handler = GuardHandler()
         self._seer_handler = SeerHandler()
         self._resolver = NightActionResolver()
         self._death_handler = DeathResolutionHandler()
+        self._validator = validator
 
     async def run_night(
         self,
@@ -102,8 +112,16 @@ class NightScheduler:
         # Set day BEFORE creating phase log (so phase number uses correct day)
         collector.day = state.day
 
+        # Hook: night start
+        if self._validator:
+            await self._validator.on_phase_start(Phase.NIGHT, state.day, state)
+
         # Create phase log for NIGHT
         collector.create_phase_log(Phase.NIGHT)
+
+        # Hook: subphase start - WerewolfAction
+        if self._validator:
+            await self._validator.on_subphase_start(SubPhase.WEREWOLF_ACTION, state.day, state)
 
         # Build PhaseContext for handlers
         context = self._build_phase_context(state)
@@ -115,6 +133,12 @@ class NightScheduler:
         ww_result = await self._run_werewolf_action(context, werewolf_participants)
         collector.add_subphase_log(ww_result.subphase_log)
 
+        # Hook: subphase end - WerewolfAction
+        if self._validator:
+            await self._validator.on_subphase_end(
+                SubPhase.WEREWOLF_ACTION, state.day, Phase.NIGHT, state, collector
+            )
+
         # Update kill_target from werewolf action
         self._update_kill_target(ww_result, night_actions)
 
@@ -122,8 +146,19 @@ class NightScheduler:
         witch_participants = self._extract_role_participants(
             participants, state, Role.WITCH
         )
+
+        # Hook: subphase start - WitchAction
+        if self._validator:
+            await self._validator.on_subphase_start(SubPhase.WITCH_ACTION, state.day, state)
+
         witch_result = await self._run_witch_action(context, witch_participants, night_actions)
         collector.add_subphase_log(witch_result.subphase_log)
+
+        # Hook: subphase end - WitchAction
+        if self._validator:
+            await self._validator.on_subphase_end(
+                SubPhase.WITCH_ACTION, state.day, Phase.NIGHT, state, collector
+            )
 
         # Update antidote/poison targets from witch action
         self._update_witch_targets(witch_result, night_actions)
@@ -132,10 +167,21 @@ class NightScheduler:
         guard_participants = self._extract_role_participants(
             participants, state, Role.GUARD
         )
+
+        # Hook: subphase start - GuardAction
+        if self._validator:
+            await self._validator.on_subphase_start(SubPhase.GUARD_ACTION, state.day, state)
+
         guard_result = await self._run_guard_action(
             context, guard_participants, night_actions
         )
         collector.add_subphase_log(guard_result.subphase_log)
+
+        # Hook: subphase end - GuardAction
+        if self._validator:
+            await self._validator.on_subphase_end(
+                SubPhase.GUARD_ACTION, state.day, Phase.NIGHT, state, collector
+            )
 
         # Update guard_target from guard action
         self._update_guard_target(guard_result, night_actions)
@@ -143,10 +189,26 @@ class NightScheduler:
         seer_participants = self._extract_role_participants(
             participants, state, Role.SEER
         )
+
+        # Hook: subphase start - SeerAction
+        if self._validator:
+            await self._validator.on_subphase_start(SubPhase.SEER_ACTION, state.day, state)
+
         seer_result = await self._run_seer_action(context, seer_participants)
         collector.add_subphase_log(seer_result.subphase_log)
 
+        # Hook: subphase end - SeerAction
+        if self._validator:
+            await self._validator.on_subphase_end(
+                SubPhase.SEER_ACTION, state.day, Phase.NIGHT, state, collector
+            )
+
         # Step 4: Resolve deaths (who died, cause)
+
+        # Hook: subphase start - NightResolution
+        if self._validator:
+            await self._validator.on_subphase_start(SubPhase.NIGHT_RESOLUTION, state.day, state)
+
         deaths = self._resolver.resolve(state, night_actions)
 
         # Add NightOutcome event to announce who died during the night
@@ -157,12 +219,26 @@ class NightScheduler:
         )
         collector.add_event(night_outcome_event)
 
+        # Hook: subphase end - NightResolution
+        if self._validator:
+            await self._validator.on_subphase_end(
+                SubPhase.NIGHT_RESOLUTION, state.day, Phase.NIGHT, state, collector
+            )
+
         # Apply death events to state (remove dead players, handle hunter shots, badge transfer)
         # This is done immediately to update living/dead status for the day
         state.apply_events_from_deaths(deaths)
 
+        # Hook: death chain complete
+        if self._validator:
+            await self._validator.on_death_chain_complete(list(deaths.keys()), state)
+
         # Update actions with any persisted changes (e.g., antidote_used, poison_used)
         actions = self._update_actions_persistent_state(actions, night_actions)
+
+        # Hook: night end
+        if self._validator:
+            await self._validator.on_phase_end(Phase.NIGHT, state.day, state, collector)
 
         return state, actions, collector, deaths
 

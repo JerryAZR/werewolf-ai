@@ -21,6 +21,10 @@ from werewolf.events import (
 )
 from werewolf.handlers import Participant
 
+# Import validator for type hints (avoid circular import)
+if TYPE_CHECKING:
+    from werewolf.engine.validator import GameValidator
+
 # Maximum number of days before game is forced to end (prevent infinite loops)
 MAX_GAME_DAYS = 20
 
@@ -41,6 +45,7 @@ class WerewolfGame:
         players: dict[int, Player],
         participants: dict[int, Participant],
         seed: Optional[int] = None,
+        validator: Optional["GameValidator"] = None,
     ):
         """Initialize the WerewolfGame.
 
@@ -50,10 +55,13 @@ class WerewolfGame:
                           who can make decisions.
             seed: Optional random seed for reproducible games. If None, uses
                   natural randomness. Same seed + same participants = identical game.
+            validator: Optional validator for runtime rule checking.
+                       Pass None or NoOpValidator for production (zero overhead).
         """
         self.players = players
         self.participants = participants
         self._seed = seed
+        self._validator = validator
 
         # Initialize game state
         self._state = GameState(
@@ -70,9 +78,9 @@ class WerewolfGame:
         # Initialize event collector
         self._collector = EventCollector(day=1)
 
-        # Initialize schedulers
-        self._night_scheduler = NightScheduler()
-        self._day_scheduler = DayScheduler()
+        # Initialize schedulers with optional validator
+        self._night_scheduler = NightScheduler(validator=validator)
+        self._day_scheduler = DayScheduler(validator=validator)
 
     async def run(self) -> tuple[GameEventLog, Optional[str]]:
         """Run complete game until victory.
@@ -96,6 +104,10 @@ class WerewolfGame:
         # Record game start
         game_start = self._create_game_start()
         self._collector.set_game_start(game_start)
+
+        # Hook: game start
+        if self._validator:
+            await self._validator.on_game_start(self._state, self._collector)
 
         # Seed random if a seed is provided for reproducible games
         if self._seed is not None:
@@ -158,6 +170,10 @@ class WerewolfGame:
         # Create GameOver event
         game_over = self._create_game_over(winner)
         self._collector.set_game_over(game_over)
+
+        # Hook: game over
+        if self._validator:
+            await self._validator.on_game_over(winner, self._state, self._collector)
 
         # Return event log and winner (canonical singular form)
         return self._collector.get_event_log(), winner
