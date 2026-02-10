@@ -16,18 +16,19 @@ from src.werewolf.events.game_events import (
     GuardAction,
     SeerAction,
     SeerResult,
-    NightResolution,
+    NightOutcome,
     Speech,
     SubPhase,
-    SheriffElection,
+    SheriffOutcome,
     SheriffOptOut,
     Vote,
     DeathAnnouncement,
-    VictoryCheck,
+    VictoryOutcome,
     VictoryCondition,
     GameOver,
     WitchActionType,
     Phase,
+    DeathCause,
 )
 
 
@@ -244,13 +245,13 @@ class TestGameEventLogQueries:
         log = GameEventLog(player_count=12)
 
         # Add night with deaths
-        resolution = NightResolution(day=1, deaths=[5, 7])
+        resolution = NightOutcome(day=1, deaths={5: DeathCause.WEREWOLF_KILL, 7: DeathCause.WEREWOLF_KILL})
         resolution_sp = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[resolution])
         night1 = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[resolution_sp])
         log.add_phase(night1)
 
         # Add another night with different deaths
-        resolution2 = NightResolution(day=2, deaths=[3])
+        resolution2 = NightOutcome(day=2, deaths={3: DeathCause.WEREWOLF_KILL})
         resolution_sp2 = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[resolution2])
         night2 = PhaseLog(number=2, kind=Phase.NIGHT, subphases=[resolution_sp2])
         log.add_phase(night2)
@@ -317,7 +318,7 @@ class TestGameEventLogQueries:
         """Test get_sheriffs with sheriff election."""
         log = GameEventLog(player_count=12)
 
-        election = SheriffElection(day=1, winner=3)
+        election = SheriffOutcome(day=1, winner=3)
         election_sp = SubPhaseLog(micro_phase=SubPhase.SHERIFF_ELECTION, events=[election])
         day1 = PhaseLog(number=1, kind=Phase.DAY, subphases=[election_sp])
         log.add_phase(day1)
@@ -330,7 +331,7 @@ class TestGameEventLogQueries:
         log = GameEventLog(player_count=12)
 
         # Day 1 election
-        election1 = SheriffElection(day=1, winner=3)
+        election1 = SheriffOutcome(day=1, winner=3)
         election_sp1 = SubPhaseLog(micro_phase=SubPhase.SHERIFF_ELECTION, events=[election1])
         day1 = PhaseLog(number=1, kind=Phase.DAY, subphases=[election_sp1])
         log.add_phase(day1)
@@ -475,7 +476,7 @@ class TestGameEventLogModelDump:
         log = GameEventLog(player_count=12)
 
         # Add a night with deaths
-        resolution = NightResolution(day=1, deaths=[5])
+        resolution = NightOutcome(day=1, deaths={5: DeathCause.WEREWOLF_KILL})
         resolution_sp = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[resolution])
         night = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[resolution_sp])
         log.add_phase(night)
@@ -531,7 +532,7 @@ class TestIntegration:
         seer_sp = SubPhaseLog(micro_phase=SubPhase.SEER_ACTION, events=[seer_action])
 
         # Night resolution - player 5 dies
-        night_resolution = NightResolution(day=1, deaths=[5])
+        night_resolution = NightOutcome(day=1, deaths={5: DeathCause.WEREWOLF_KILL})
         resolution_sp = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[night_resolution])
 
         night1 = PhaseLog(
@@ -558,7 +559,7 @@ class TestIntegration:
         opt_out_sp = SubPhaseLog(micro_phase=SubPhase.OPT_OUT, events=[opt_out])
 
         # Sheriff election
-        election = SheriffElection(day=1, winner=0)
+        election = SheriffOutcome(day=1, winner=0)
         election_sp = SubPhaseLog(micro_phase=SubPhase.SHERIFF_ELECTION, events=[election])
 
         # Death announcement
@@ -566,8 +567,8 @@ class TestIntegration:
         death_sp = SubPhaseLog(micro_phase=SubPhase.DEATH_ANNOUNCEMENT, events=[announcement])
 
         # Last words
-        last_words = Speech(actor=7, day=1, micro_phase=SubPhase.LAST_WORDS, content="I was the Guard!")
-        last_words_sp = SubPhaseLog(micro_phase=SubPhase.LAST_WORDS, events=[last_words])
+        last_words = Speech(actor=7, day=1, micro_phase=SubPhase.DEATH_RESOLUTION, content="I was the Guard!")
+        last_words_sp = SubPhaseLog(micro_phase=SubPhase.DEATH_RESOLUTION, events=[last_words])
 
         # Discussion
         discussion_speech = Speech(actor=3, day=1, micro_phase=SubPhase.DISCUSSION, content="Player 0 is suspicious!")
@@ -583,7 +584,7 @@ class TestIntegration:
         voting = SubPhaseLog(micro_phase=SubPhase.VOTING, events=votes)
 
         # Victory check
-        victory_check = VictoryCheck(phase=Phase.DAY, is_game_over=False)
+        victory_check = VictoryOutcome(phase=Phase.DAY, is_game_over=False)
         victory_sp = SubPhaseLog(micro_phase=SubPhase.VICTORY_CHECK, events=[victory_check])
 
         day1 = PhaseLog(
@@ -617,7 +618,7 @@ class TestIntegration:
         log.game_start = game_start
 
         # Night 1 with deaths
-        night_resolution = NightResolution(day=1, deaths=[5])
+        night_resolution = NightOutcome(day=1, deaths={5: DeathCause.WEREWOLF_KILL})
         resolution_sp = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[night_resolution])
         night1 = PhaseLog(number=1, kind=Phase.NIGHT, subphases=[resolution_sp])
         log.add_phase(night1)
@@ -627,7 +628,7 @@ class TestIntegration:
         log.add_phase(day1)
 
         # Night 2 with deaths
-        night_resolution2 = NightResolution(day=2, deaths=[7, 8])
+        night_resolution2 = NightOutcome(day=2, deaths={7: DeathCause.WEREWOLF_KILL, 8: DeathCause.WEREWOLF_KILL})
         resolution_sp2 = SubPhaseLog(micro_phase=SubPhase.NIGHT_RESOLUTION, events=[night_resolution2])
         night2 = PhaseLog(number=2, kind=Phase.NIGHT, subphases=[resolution_sp2])
         log.add_phase(night2)

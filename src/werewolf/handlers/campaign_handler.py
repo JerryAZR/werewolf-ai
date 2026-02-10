@@ -1,0 +1,386 @@
+"""Campaign handler for the Werewolf AI game.
+
+This handler manages the Campaign subphase on Day 1 where Sheriff candidates
+give campaign speeches before the election.
+"""
+
+from typing import Protocol, Sequence, Optional
+from pydantic import BaseModel, Field
+
+from src.werewolf.events.game_events import (
+    Speech,
+    Phase,
+    SubPhase,
+    GameEvent,
+)
+from src.werewolf.models.player import Player, Role
+
+
+# ============================================================================
+# Handler Result Types
+# ============================================================================
+
+
+class SubPhaseLog(BaseModel):
+    """Generic subphase container with events."""
+
+    micro_phase: SubPhase
+    events: list[GameEvent] = Field(default_factory=list)
+
+
+class HandlerResult(BaseModel):
+    """Output from handlers containing all events from a subphase."""
+
+    subphase_log: SubPhaseLog
+    debug_info: Optional[str] = None
+
+
+# ============================================================================
+# Participant Protocol
+# ============================================================================
+
+
+class Participant(Protocol):
+    """A player (AI or human) that can make decisions.
+
+    The handler queries participants for their decisions during subphases.
+    Participants return raw strings - handlers are responsible for parsing
+    and validation.
+    """
+
+    async def decide(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        hint: Optional[str] = None,
+    ) -> str:
+        """Make a decision and return raw response string.
+
+        Args:
+            system_prompt: System instructions defining the role/constraints
+            user_prompt: User prompt with current game state
+            hint: Optional hint for invalid previous attempts
+
+        Returns:
+            Raw response string to be parsed by the handler
+        """
+        ...
+
+
+# ============================================================================
+# Campaign Handler
+# ============================================================================
+
+
+class CampaignHandler:
+    """Handler for Campaign subphase (Day 1 only).
+
+    Responsibilities:
+    1. Validate that day == 1 (Campaign only occurs on Day 1)
+    2. Filter living Sheriff candidates from participants
+    3. Build filtered context (role visible to self, not others)
+    4. Query each candidate for their campaign speech
+    5. Validate content is non-empty
+    6. Order speeches with Sheriff speaking LAST if incumbent running
+    7. Return HandlerResult with SubPhaseLog containing Speech events
+
+    Context Filtering (what candidates see):
+    - Current day (must be 1)
+    - List of Sheriff candidates (seats only)
+    - Sheriff speaks LAST rule
+    - Player's own role (to know if running)
+
+    What candidates do NOT see:
+    - Who died (death announcements come AFTER Campaign)
+    - Other candidates' campaign speeches (private until all given)
+    - Any game events from previous phases
+    """
+
+    # Maximum retry attempts for invalid input
+    max_retries: int = 3
+
+    async def __call__(
+        self,
+        context: "PhaseContext",
+        participants: Sequence[tuple[int, Participant]],
+        sheriff_candidates: list[int],
+    ) -> HandlerResult:
+        """Execute the Campaign subphase.
+
+        Args:
+            context: Game state with players, living/dead, sheriff, day
+            participants: Sequence of (seat, Participant) tuples for all players
+            sheriff_candidates: List of candidate seats running for Sheriff
+
+        Returns:
+            HandlerResult with SubPhaseLog containing Speech events
+        """
+        events = []
+
+        # Validate day == 1
+        if context.day != 1:
+            return HandlerResult(
+                subphase_log=SubPhaseLog(micro_phase=SubPhase.CAMPAIGN),
+                debug_info="Campaign only occurs on Day 1, skipping",
+            )
+
+        # Filter living candidates and get their participants
+        living_candidates = [
+            seat for seat in sheriff_candidates
+            if seat in context.living_players
+        ]
+
+        # Edge case: no living candidates
+        if not living_candidates:
+            return HandlerResult(
+                subphase_log=SubPhaseLog(micro_phase=SubPhase.CAMPAIGN),
+                debug_info="No living Sheriff candidates",
+            )
+
+        # Build participant lookup
+        participant_dict = dict(participants)
+
+        # Order candidates: non-Sheriff first, Sheriff speaks LAST
+        current_sheriff = context.sheriff
+        ordered_candidates = self._order_speakers(living_candidates, current_sheriff)
+
+        # Query each candidate for their speech
+        for seat in ordered_candidates:
+            participant = participant_dict.get(seat)
+            if participant:
+                speech = await self._get_valid_speech(
+                    context=context,
+                    participant=participant,
+                    for_seat=seat,
+                    candidates=ordered_candidates,
+                )
+                events.append(speech)
+
+        # Build debug info
+        import json
+        debug_info = json.dumps({
+            "day": context.day,
+            "candidates": ordered_candidates,
+            "speech_count": len(events),
+        })
+
+        return HandlerResult(
+            subphase_log=SubPhaseLog(
+                micro_phase=SubPhase.CAMPAIGN,
+                events=events,
+            ),
+            debug_info=debug_info,
+        )
+
+    def _order_speakers(
+        self,
+        candidates: list[int],
+        current_sheriff: Optional[int],
+    ) -> list[int]:
+        """Order candidates so Sheriff speaks last if running.
+
+        Args:
+            candidates: List of candidate seats
+            current_sheriff: Current Sheriff seat (None on Day 1)
+
+        Returns:
+            Candidates ordered with Sheriff last if running
+        """
+        if current_sheriff is None or current_sheriff not in candidates:
+            # No incumbent Sheriff running, maintain original order
+            return sorted(candidates)
+
+        # Sheriff is running, put them last
+        return sorted(candidates, key=lambda s: s == current_sheriff)
+
+    def _build_prompts(
+        self,
+        context: "PhaseContext",
+        for_seat: int,
+        candidates: list[int],
+    ) -> tuple[str, str]:
+        """Build filtered prompts for campaign speech.
+
+        Args:
+            context: Game state
+            for_seat: The candidate seat to build prompts for
+            candidates: List of all candidate seats (ordered)
+
+        Returns:
+            Tuple of (system_prompt, user_prompt)
+        """
+        player = context.get_player(for_seat)
+        role_name = player.role.value if player else "Unknown"
+
+        # Other candidates (seats only, not roles)
+        other_candidates = [c for c in candidates if c != for_seat]
+        other_candidates_str = ', '.join(map(str, sorted(other_candidates)))
+
+        # Position in speaking order
+        position = candidates.index(for_seat) + 1
+        total = len(candidates)
+
+        # Check if Sheriff (incumbent) is running and will speak last
+        incumbent = context.sheriff
+        sheriff_running = incumbent is not None and incumbent in candidates
+
+        sheriff_note = ""
+        if sheriff_running:
+            sheriff_note = f"\n- Note: The incumbent Sheriff (seat {incumbent}) is also running and will speak LAST."
+
+        # Build system prompt
+        system = f"""You are running for Sheriff on Day {context.day}.
+
+SHERIFF POWERS:
+- The Sheriff has 1.5x vote weight during voting phases
+- If eliminated, the Sheriff can transfer the badge to another player
+- The Sheriff speaks LAST during all discussion phases
+
+CAMPAIGN RULES:
+- You will give a campaign speech to convince other players to vote for you
+- Be persuasive, show your leadership potential, and build trust
+- Do NOT reveal your role (Seer, Witch, etc.) - campaigns should be about leadership
+- Your speech should be unique to you based on your role and strategy
+- You speak in position {position} of {total}{sheriff_note}
+
+Your response should be your campaign speech as a single string.
+Make it compelling and appropriate for a social deduction game."""
+
+        # Build user prompt
+        user = f"""=== Day {context.day} - Sheriff Campaign ===
+
+YOUR INFORMATION:
+  Your seat: {for_seat}
+  Your role: {role_name}
+  You are running for Sheriff!
+
+SHERIFF CANDIDATES (seats): {other_candidates_str if other_candidates else 'None - you are alone!'}
+
+SPEAKING ORDER:
+  Position: {position} of {total}{sheriff_note}
+
+CAMPAIGN INSTRUCTIONS:
+  This is your chance to convince other players to vote for you as Sheriff.
+  The Sheriff has 1.5x vote weight and speaks last during discussions.
+
+  Tips:
+  - Be persuasive and show leadership
+  - Build trust with other players
+  - Consider your role strategy (e.g., as a Werewolf, you may want to appear helpful)
+  - Do NOT reveal your specific role - keep some mystery
+  - Make a memorable impression
+
+  Your speech:
+  (Enter your campaign speech below - must be non-empty)"""
+
+        return system, user
+
+    async def _get_valid_speech(
+        self,
+        context: "PhaseContext",
+        participant: Participant,
+        for_seat: int,
+        candidates: list[int],
+    ) -> Speech:
+        """Get valid campaign speech from participant with retry.
+
+        Args:
+            context: Game state
+            participant: The participant to query
+            for_seat: The candidate's seat
+            candidates: List of all candidates (ordered)
+
+        Returns:
+            Valid Speech event
+
+        Raises:
+            MaxRetriesExceededError: If max retries are exceeded
+        """
+        for attempt in range(self.max_retries):
+            system, user = self._build_prompts(context, for_seat, candidates)
+
+            # Add hint for retry attempts
+            hint = None
+            if attempt > 0:
+                hint = "Your speech was empty. Please provide a campaign speech."
+
+            raw = await participant.decide(system, user, hint=hint)
+
+            # Validate content
+            content = raw.strip()
+            if not content:
+                if attempt == self.max_retries - 1:
+                    raise MaxRetriesExceededError(
+                        f"Failed after {self.max_retries} attempts. Speech was empty."
+                    )
+                hint = "Your speech was empty. Please provide a campaign speech."
+                raw = await participant.decide(system, user, hint=hint)
+                content = raw.strip()
+
+            if content:
+                # Create speech with preview for debug
+                preview = content[:100] + "..." if len(content) > 100 else content
+                return Speech(
+                    actor=for_seat,
+                    content=content,
+                    phase=Phase.DAY,
+                    micro_phase=SubPhase.CAMPAIGN,
+                    day=context.day,
+                    debug_info=f"speech_preview={preview}",
+                )
+
+        # Fallback - should not reach here
+        default_speech = "I would like to be your Sheriff."
+        return Speech(
+            actor=for_seat,
+            content=default_speech,
+            phase=Phase.DAY,
+            micro_phase=SubPhase.CAMPAIGN,
+            day=context.day,
+            debug_info="Max retries exceeded, using default speech",
+        )
+
+
+class MaxRetriesExceededError(Exception):
+    """Raised when max retries are exceeded."""
+    pass
+
+
+# ============================================================================
+# PhaseContext (for use with the handler)
+# ============================================================================
+
+
+class PhaseContext:
+    """Minimal context for testing Campaign handler.
+
+    This is a simpler class-based context that mirrors what the game engine
+    would provide. Handlers can use get_player() and other helper methods.
+    """
+
+    def __init__(
+        self,
+        players: dict[int, Player],
+        living_players: set[int],
+        dead_players: set[int],
+        sheriff: Optional[int] = None,
+        day: int = 1,
+    ):
+        self.players = players
+        self.living_players = living_players
+        self.dead_players = dead_players
+        self.sheriff = sheriff
+        self.day = day
+
+    def get_player(self, seat: int) -> Optional[Player]:
+        """Get player by seat."""
+        return self.players.get(seat)
+
+    def is_werewolf(self, seat: int) -> bool:
+        """Check if a player is a werewolf."""
+        player = self.get_player(seat)
+        return player is not None and player.role == Role.WEREWOLF
+
+    def is_alive(self, seat: int) -> bool:
+        """Check if a player is alive."""
+        return seat in self.living_players

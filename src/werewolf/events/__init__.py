@@ -15,23 +15,20 @@ from werewolf.events.game_events import (
     # Non-Character Events
     GameStart,
     DeathAnnouncement,
-    SheriffElection,
+    SheriffOutcome,
     Banishment,
-    SheriffBadgeTransfer,
-    NightResolution,
+    NightOutcome,
+    VictoryOutcome,
+    GameOver,
     # Character Actions
     WitchAction,
     SeerAction,
     Speech,
     SheriffOptOut,
     Vote,
-    DeathResolution,
+    DeathEvent,
     WerewolfKill,
     GuardAction,
-    HunterShoot,
-    # Victory (TBD)
-    VictoryCheck,
-    GameOver,
 )
 
 from werewolf.events.event_log import (
@@ -55,23 +52,20 @@ __all__ = [
     # Non-Character Events
     "GameStart",
     "DeathAnnouncement",
-    "SheriffElection",
+    "SheriffOutcome",
     "Banishment",
-    "SheriffBadgeTransfer",
-    "NightResolution",
+    "NightOutcome",
+    "VictoryOutcome",
+    "GameOver",
     # Character Actions
     "WitchAction",
     "SeerAction",
     "Speech",
     "SheriffOptOut",
     "Vote",
-    "DeathResolution",
+    "DeathEvent",
     "WerewolfKill",
     "GuardAction",
-    "HunterShoot",
-    # Victory (TBD)
-    "VictoryCheck",
-    "GameOver",
     # Logs
     "GameEventLog",
     "PhaseLog",

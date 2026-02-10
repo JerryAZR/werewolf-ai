@@ -3,19 +3,18 @@
 from werewolf.events import (
     GameStart,
     Phase,
-    MicroPhase,
+    SubPhase,
     WerewolfKill,
     WitchAction,
     WitchActionType,
     GuardAction,
-    HunterShoot,
     SeerAction,
     SeerResult,
     DeathAnnouncement,
     Vote,
-    VictoryCheck,
+    VictoryOutcome,
     Speech,
-    DeathResolution,
+    DeathEvent,
     DeathCause,
 )
 from werewolf.models import (
@@ -61,7 +60,7 @@ def test_werewolf_kill_event():
     assert event.actor == 0
     assert event.target == 3
     assert event.phase == Phase.NIGHT
-    assert event.micro_phase == MicroPhase.WEREWOLF_ACTION
+    assert event.micro_phase == SubPhase.WEREWOLF_ACTION
 
 
 def test_witch_action_event():
@@ -106,12 +105,12 @@ def test_speech_event():
     event = Speech(
         day=1,
         actor=0,
-        micro_phase=MicroPhase.CAMPAIGN,
+        micro_phase=SubPhase.CAMPAIGN,
         content="I am the Sheriff!",
     )
     assert event.actor == 0
     assert event.content == "I am the Sheriff!"
-    assert event.micro_phase == MicroPhase.CAMPAIGN
+    assert event.micro_phase == SubPhase.CAMPAIGN
 
 
 def test_vote_event():
@@ -119,7 +118,7 @@ def test_vote_event():
     event = Vote(
         day=1,
         actor=0,
-        micro_phase=MicroPhase.VOTING,
+        micro_phase=SubPhase.VOTING,
         target=5,
     )
     assert event.actor == 0
@@ -138,11 +137,10 @@ def test_death_announcement():
 
 
 def test_death_resolution():
-    """Test DeathResolution event."""
-    event = DeathResolution(
+    """Test DeathEvent event."""
+    event = DeathEvent(
         day=1,
         actor=5,  # Dying player
-        micro_phase=MicroPhase.BANNED_LAST_WORDS,
         cause=DeathCause.BANISHMENT,
         last_words="I was not a werewolf...",
     )
@@ -174,12 +172,8 @@ def test_str_methods():
     guard_skip = GuardAction(day=1, actor=2)
     assert "skip" in str(guard_skip)
 
-    # Hunter skip
-    hunter_skip = HunterShoot(day=1, actor=3)
-    assert "skip" in str(hunter_skip)
-
     # Speech truncation
-    long_speech = Speech(day=1, actor=0, micro_phase=MicroPhase.CAMPAIGN, content="x" * 100)
+    long_speech = Speech(day=1, actor=0, micro_phase=SubPhase.CAMPAIGN, content="x" * 100)
     assert "..." in str(long_speech)
 
 
