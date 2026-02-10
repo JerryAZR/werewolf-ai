@@ -71,9 +71,6 @@ class PhaseContext(BaseModel):
 
     # Current Sheriff (for vote weight and speaking order)
     sheriff: Optional[int] = None
-
-    # Phase-specific data (candidates, etc.)
-    phase_data: Optional[dict] = None
 ```
 
 ### Output: HandlerResult

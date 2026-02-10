@@ -14,10 +14,12 @@ uv sync              # Install project
 uv sync --dev        # Install with dev dependencies (pytest)
 
 # Run tests
-pytest tests/
+uv run pytest tests/                    # All tests
+uv run pytest tests/test_file.py        # Single test file
+uv run pytest tests/test_file.py::test_name  # Specific test
 
 # Run the game
-python main.py
+uv run python main.py
 ```
 
 ## Architecture
@@ -28,12 +30,16 @@ python main.py
 
 **Pydantic Models**: All data models use Pydantic v2 BaseModel with `enum_values=True` for serialization.
 
-**12-Player Configuration**: Defined in `STANDARD_12_PLAYER_CONFIG` (src/werewolf/models/player.py:74):
+**Event Log Hierarchy**: `GameEventLog` → `PhaseLog` (NIGHT/DAY/GAME_OVER) → `SubPhaseLog` → `GameEvent`
+
+**12-Player Configuration**: Defined in `STANDARD_12_PLAYER_CONFIG` (src/werewolf/models/player.py:81):
 - 4 Werewolves, 1 Seer, 1 Witch, 1 Hunter, 1 Guard, 4 Ordinary Villagers
 
 ## Game Rules (Critical)
 
 - **Victory**: "Slaughter the Side" - Werewolves win if all Gods OR all Villagers die
+- **Night Subphases**: WEREWOLF_ACTION → WITCH_ACTION → GUARD/SEER (parallel) → NIGHT_RESOLUTION
+- **Day Subphases**: CAMPAIGN → OPT_OUT → SHERIFF_ELECTION → DEATH_RESOLUTION → DISCUSSION → VOTING → VICTORY_CHECK
 - **Sheriff**: Elected Day 1 before death announcements; vote weight = 1.5
 - **Night Order**: Werewolves → Witch (sees werewolf target) → Guard/Seer (parallel)
 - **Guard Restriction**: Cannot guard same person twice consecutively
@@ -45,4 +51,5 @@ python main.py
 
 - [RULES.md](RULES.md) - Complete game rules
 - [PHASES.md](PHASES.md) - Detailed phase definitions and flows
+- [PHASE_HANDLERS.md](PHASE_HANDLERS.md) - Handler input/output specs
 - [PLAN.md](PLAN.md) - Implementation plan and testing strategy
