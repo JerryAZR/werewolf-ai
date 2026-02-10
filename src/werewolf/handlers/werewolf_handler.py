@@ -221,7 +221,7 @@ Dead players: {', '.join(map(str, dead_players)) if dead_players else 'none'}
 IMPORTANT RULES:
 1. You MAY choose to skip killing (enter -1 or "none").
 2. You CANNOT kill dead players.
-3. Coordinate with your teammates to reach consensus on the target.
+3. You decide the final target for your werewolf team.
 
 Your response should be a single integer representing the seat number of your target, or -1 to skip.
 Example: "7" means you want to kill the player at seat 7. "-1" means you want to skip."""

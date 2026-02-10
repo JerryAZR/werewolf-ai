@@ -200,9 +200,10 @@ OTHER CANDIDATES (seat numbers only): {', '.join(map(str, other_candidates)) if 
 
 IMPORTANT RULES:
 1. This is your ONLY chance to opt out of the Sheriff race.
-2. If you opt out now, you can never become Sheriff this game.
-3. If you stay in, you will be eligible to receive votes.
-4. Your response must be either "opt out" or "stay".
+2. If you opt out now, you cannot receive votes this election.
+3. If the Sheriff dies and passes the badge to you later, you could still become Sheriff.
+4. If you stay in, you will be eligible to receive votes.
+5. Your response must be either "opt out" or "stay".
 
 Your response should be exactly one of:
 - "opt out" - You withdraw from the Sheriff race

@@ -316,7 +316,7 @@ DISCUSSION RULES:
 - All living players will speak once before voting begins
 - You speak in position {position} of {total}
 - The Sheriff speaks LAST and has 1.5x vote weight
-- You must not reveal your role (keep your identity hidden)
+- You may reveal your role or keep it hidden - choose what benefits your strategy
 - You can share information strategically (like Seer findings) but be careful
 - Your goal is to influence the vote and avoid being eliminated
 

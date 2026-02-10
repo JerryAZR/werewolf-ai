@@ -239,7 +239,7 @@ SHERIFF POWERS:
 CAMPAIGN RULES:
 - You will give a campaign speech to convince other players to vote for you
 - Be persuasive, show your leadership potential, and build trust
-- Do NOT reveal your role (Seer, Witch, etc.) - campaigns should be about leadership
+- You may reveal your role or keep it secret - both are valid strategies
 - Your speech should be unique to you based on your role and strategy
 - You speak in position {position} of {total}{sheriff_note}
 

@@ -4,7 +4,7 @@ Campaign subphase: Day 1 Sheriff candidates give speeches.
 Rules:
 - Only Day 1
 - Sheriff speaks LAST (if already elected)
-- Dead candidates cannot speak
+- Dead candidates CAN speak (they are treated as alive until death announced)
 - Empty content rejected
 """
 
@@ -252,7 +252,7 @@ class CampaignHandler:
     Rules:
     - Only Day 1
     - Sheriff speaks LAST (if sheriff is a candidate)
-    - Dead candidates are skipped
+    - Dead candidates CAN speak (treated as alive until death announced)
     - Empty content rejected with retry
     """
 
@@ -273,17 +273,15 @@ class CampaignHandler:
                 debug_info="Campaign skipped: not Day 1"
             )
 
-        # Get living candidates only
-        living_candidates = [
-            seat for seat in context.sheriff_candidates
-            if context.is_alive(seat)
-        ]
+        # All candidates (including dead ones) can speak
+        # Dead candidates are treated as alive until death is announced
+        all_candidates = context.sheriff_candidates
 
         # Edge case: no candidates
-        if not living_candidates:
+        if not all_candidates:
             return HandlerResult(
                 subphase_log=SubPhaseLog(micro_phase=SubPhase.CAMPAIGN),
-                debug_info="No living candidates for campaign"
+                debug_info="No candidates for campaign"
             )
 
         # Create lookup dict from participants
@@ -291,13 +289,13 @@ class CampaignHandler:
 
         # Sheriff speaks last if sheriff is a candidate
         sheriff = context.sheriff
-        if sheriff is not None and sheriff in living_candidates:
-            non_sheriff_candidates = [c for c in living_candidates if c != sheriff]
+        if sheriff is not None and sheriff in all_candidates:
+            non_sheriff_candidates = [c for c in all_candidates if c != sheriff]
             speaking_order = non_sheriff_candidates + [sheriff]
         else:
-            speaking_order = living_candidates
+            speaking_order = all_candidates
 
-        # Collect speeches from each candidate
+        # Collect speeches from each candidate (including dead ones)
         for seat in speaking_order:
             participant = participant_lookup.get(seat)
             if participant:
@@ -494,13 +492,13 @@ class TestCampaignHandlerInvalidScenarios:
         assert "not Day 1" in result.debug_info
 
     @pytest.mark.asyncio
-    async def test_dead_candidate_cannot_speak(self):
-        """Test that dead candidates are skipped."""
+    async def test_dead_candidate_can_speak(self):
+        """Test that dead candidates CAN speak (they are treated as alive until death announced)."""
         context, participants = make_context_day1_with_dead_candidate()
 
-        # Seat 1 is a candidate but dead
+        # Seat 1 is a candidate but dead - should still be able to speak
         participants[0] = MockParticipant("Speech from 0")
-        participants[1] = MockParticipant("Speech from dead candidate")  # Will be skipped
+        participants[1] = MockParticipant("Speech from dead candidate - I deserve your vote!")
         participants[4] = MockParticipant("Speech from 4")
         participants[8] = MockParticipant("Speech from 8")
 
@@ -512,17 +510,19 @@ class TestCampaignHandlerInvalidScenarios:
             (8, participants[8]),
         ])
 
-        # Only 3 speeches (dead candidate 1 skipped)
-        assert len(result.subphase_log.events) == 3
+        # All 4 speeches including dead candidate (seat 1)
+        assert len(result.subphase_log.events) == 4
 
-        # Verify no speech from seat 1
+        # Verify dead candidate (seat 1) DID speak
         actors = [speech.actor for speech in result.subphase_log.events]
-        assert 1 not in actors
-
-        # Verify living candidates spoke
+        assert 1 in actors, "Dead candidate should be able to speak"
         assert 0 in actors
         assert 4 in actors
         assert 8 in actors
+
+        # Verify dead candidate's speech content
+        dead_speech = next(s for s in result.subphase_log.events if s.actor == 1)
+        assert "dead candidate" in dead_speech.content.lower()
 
     @pytest.mark.asyncio
     async def test_empty_content_rejected_with_retry(self):
@@ -583,19 +583,18 @@ class TestCampaignHandlerEdgeCases:
         # Empty result
         assert result.subphase_log.micro_phase == SubPhase.CAMPAIGN
         assert len(result.subphase_log.events) == 0
-        assert "No living candidates" in result.debug_info
+        assert "No candidates" in result.debug_info
 
     @pytest.mark.asyncio
-    async def test_all_candidates_dead(self):
-        """Test when all candidates are dead (edge case)."""
+    async def test_no_candidates_specified(self):
+        """Test when no candidates are specified (empty list)."""
         players = {
             0: Player(seat=0, name="W1", role=Role.WEREWOLF, is_alive=True),
         }
         living = {0}
         dead = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
         sheriff = None
-        # All candidates dead
-        candidates = [4, 5, 6]  # All dead
+        candidates = []  # No candidates specified
 
         context = PhaseContext(players, living, dead, sheriff, day=1, sheriff_candidates=candidates)
 
@@ -604,7 +603,7 @@ class TestCampaignHandlerEdgeCases:
 
         # Empty result
         assert len(result.subphase_log.events) == 0
-        assert "No living candidates" in result.debug_info
+        assert "No candidates" in result.debug_info
 
     @pytest.mark.asyncio
     async def test_single_candidate(self):

@@ -64,7 +64,7 @@ Since this is an electronic game implementation, role actions do not need to be 
 
 ### Day Phase
 
-1. **Sheriff Election (Day 1 only)**: The Sheriff election is held **first** on Day 1, **before night results are announced**. Since death information has not been revealed yet, **any player can run for Sheriff** (including players who died last night but haven't been announced).
+1. **Sheriff Election (Day 1 only)**: The Sheriff election is held **first** on Day 1, **before night results are announced**. Since death information has not been revealed yet, **any player can run for Sheriff** (including players who died last night but haven't been announced yet). Dead candidates can **run, give campaign speeches, and vote** - they are treated as alive until death is officially announced. If elected Sheriff and then revealed as dead, they can still transfer the badge.
 2. **Announce Night Results**: Announce dead players, but do not disclose the cause of death or identity.
 3. **Last Words**: Players who died last night give their last words (each player has only one chance for last words per game).
 4. **Discussion**: Living players speak in order. The Sheriff leads the discussion.
@@ -168,10 +168,10 @@ Victory Check ─┬─ Villager Victory → Game Over
 
 ### Sheriff
 - Elected by majority vote on **Day 1** before any announcements. The election happens first, then night results are revealed.
-- **Eligibility**: The Sheriff election is held **before** death announcements. Any player can run (including players who died last night but haven't been announced yet).
+- **Eligibility**: Any player can run for Sheriff, including players who died last night but haven't been announced yet. **Dead candidates are treated as alive during the Sheriff election** - they can run, give campaign speeches, and vote. If a dead player is elected Sheriff and then revealed as dead, they can still transfer the badge to another player.
 - **Tie-Breaking**: The Sheriff's vote counts as 1.5 votes, breaking ties in their favor.
 - **Discussion Leader**: The Sheriff leads and organizes the day's discussion.
-- **Badge Transfer**: If the Sheriff is banished or killed at night, the badge can be passed to another player of their choice.
+- **Badge Transfer**: If the Sheriff is banished or killed at night, the badge can be passed to another player of their choice. The Sheriff (AI or human) decides who receives the badge during their death resolution.
 - **No Win Condition Change**: The Sheriff does NOT change the player's original alignment. A werewolf Sheriff still wins with the Werewolf camp.
 - **Death Rules**: If the Sheriff is banished, they can give last words and then choose who inherits the badge.
 - **Night Death**: If the Sheriff is killed at night, the badge is not revealed. The Sheriff can designate an heir when night results are announced the next morning.
@@ -206,7 +206,7 @@ Werewolf has many variations. This game uses the following specific rules:
 ### Role Skill Rules
 | Rule Item | Our Implementation |
 |-----------|--------------------|
-| Sheriff Election | Held on Day 1 **before** death announcements; any player can run (including those who died last night but haven't been announced); majority vote; no abstention |
+| Sheriff Election | Held on Day 1 **before** death announcements; any player can run, speak, and vote (including those who died last night but haven't been announced yet); majority vote; no abstention |
 | Sheriff Power | Tie-breaking vote (1.5 votes); leads discussion; badge transferable on death |
 | Hunter Skill | Activates on Werewolf kill or Banishment; Disabled by Poison; **Optional usage** |
 | Guard Skill | Cannot guard same person twice in a row; **Self-guard allowed** |

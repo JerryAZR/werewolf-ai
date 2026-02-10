@@ -1,24 +1,155 @@
 """DeathResolution handler for the Werewolf AI game.
 
-This handler processes NIGHT deaths from NightOutcome, generating DeathEvent
-for each death with:
-- Last words (Night 1 only)
+This handler processes NIGHT deaths from NightOutcome, querying participants
+for:
+- Last words (Night 1 only, any role)
 - Hunter shoot target (if Hunter + WEREWOLF_KILL)
 - Badge transfer (if Sheriff)
 
 For banishment deaths, see BanishmentResolution handler.
 """
 
-from typing import Optional, Sequence
-from pydantic import Field
+from typing import Optional, Sequence, Protocol, Any
+from pydantic import BaseModel, Field
+
+from src.werewolf.events.game_events import GameEvent
 
 from src.werewolf.events.game_events import (
     DeathEvent,
     DeathCause,
     Phase,
     SubPhase,
+    GameEvent,
 )
 from src.werewolf.models.player import Player, Role
+
+
+# ============================================================================
+# AI Prompts (Single Source of Truth)
+# ============================================================================
+# These constants define all prompts used by this handler.
+# See PROMPTS.md for human-readable documentation of these prompts.
+
+
+PROMPT_LAST_WORDS_SYSTEM = """You are a player at seat {seat} and you are about to die.
+
+YOUR ROLE: {role_name}
+
+DEATH CIRCUMSTANCES: You died on Night {day} due to werewolf attack.
+
+This is your chance to speak your final words to the village.
+Make them memorable and strategic - consider:
+- What information to reveal
+- Who to trust or suspect
+- What you want your allies/enemies to know
+
+Your response should be your final speech as a single string.
+Be authentic to your role and strategic for your team's victory!"""
+
+
+PROMPT_LAST_WORDS_USER = """=== Night {day} - Your Final Words ===
+
+YOUR INFORMATION:
+  Your seat: {seat}
+  Your role: {role_name} (keep secret or reveal as you choose)
+  You are about to die!
+
+DEATH CONTEXT:
+  Night {day} death due to werewolf attack
+
+LIVING PLAYERS: {living_seats}
+
+DEAD PLAYERS: {dead_seats}
+
+This is your last chance to speak! You may:
+- Reveal your role or keep it hidden
+- Share information or mislead
+- Accuse others or defend yourself
+- Say farewell
+
+Enter your final speech below:
+(Must be non-empty - this is your last chance to speak!)"""
+
+
+PROMPT_HUNTER_SHOOT_SYSTEM = """You are the Hunter at seat {hunter_seat} and you have been killed by werewolves!
+
+YOUR ROLE:
+- As the Hunter, you get ONE final shot before dying
+- You can shoot any ONE living player (werewolf, villager, anyone)
+- You may also choose to SKIP (not shoot anyone)
+- Your shot is your last action in the game
+
+IMPORTANT RULES:
+1. You can shoot any living player
+2. Werewolves appear as WEREWOLF, everyone else appears as GOOD
+3. This is your final action - choose wisely!
+
+Your response should be: TARGET_SEAT or "SKIP"
+- Example: "7" (shoot player at seat 7)
+- Example: "SKIP" (don't shoot anyone)"""
+
+
+PROMPT_HUNTER_SHOOT_USER = """=== Night {day} - Hunter Final Shot ===
+
+YOUR IDENTITY:
+  You are the Hunter at seat {hunter_seat}
+  You have been killed by werewolves!
+  This is your LAST ACTION - choose wisely!
+
+LIVING PLAYERS (potential targets):
+  Seats: {living_seats}
+
+RULES:
+  - You can shoot any ONE living player
+  - Werewolves appear as WEREWOLF
+  - All other roles (Villager, Guard, Witch, Seer) appear as GOOD
+  - You may also SKIP (not shoot anyone)
+
+HINT: {werewolf_hint}
+
+Enter your choice (e.g., "7" or "SKIP"):"""
+
+
+PROMPT_BADGE_TRANSFER_SYSTEM = """You are the Sheriff at seat {sheriff_seat} and you are about to die.
+
+SHERIFF POWERS:
+- The Sheriff has 1.5x vote weight
+- The Sheriff speaks LAST during all discussions
+- When you die, you can transfer your badge to ONE living player
+
+IMPORTANT RULES:
+1. You can transfer to any living player
+2. Werewolves will try to masquerade as good - choose wisely!
+3. If you SKIP, no one gets the badge
+
+Your response should be: TARGET_SEAT or "SKIP"
+- Example: "7" (transfer badge to player at seat 7)
+- Example: "SKIP" (don't transfer the badge)"""
+
+
+PROMPT_BADGE_TRANSFER_USER = """=== Night {day} - Sheriff Badge Transfer ===
+
+YOUR IDENTITY:
+  You are the Sheriff at seat {sheriff_seat}
+  You are about to die and must decide who inherits your badge!
+
+SHERIFF POWERS:
+  - Badge holder has 1.5x vote weight
+  - Badge holder speaks LAST during discussions
+  - This is your LAST DECISION - choose wisely!
+
+LIVING PLAYERS (potential heirs):
+  Seats: {living_seats}
+
+RULES:
+  - Choose ONE living player to receive your badge
+  - You may SKIP (no one gets the badge)
+  - Werewolves appear as WEREWOLF
+  - All other roles appear as GOOD
+
+HINT: {trusted_hint}
+
+Enter your choice (e.g., "7" or "SKIP"):"""
 
 
 # ============================================================================
@@ -26,26 +157,50 @@ from src.werewolf.models.player import Player, Role
 # ============================================================================
 
 
-class SubPhaseLog:
+class SubPhaseLog(BaseModel):
     """Generic subphase container with events."""
 
     micro_phase: SubPhase
-    events: list[DeathEvent]
-
-    def __init__(self, micro_phase: SubPhase, events: list[DeathEvent]):
-        self.micro_phase = micro_phase
-        self.events = events
+    events: list[GameEvent] = Field(default_factory=list)
 
 
-class HandlerResult:
+class HandlerResult(BaseModel):
     """Output from handlers containing all events from a subphase."""
 
     subphase_log: SubPhaseLog
     debug_info: Optional[str] = None
 
-    def __init__(self, subphase_log: SubPhaseLog, debug_info: Optional[str] = None):
-        self.subphase_log = subphase_log
-        self.debug_info = debug_info
+
+# ============================================================================
+# Participant Protocol
+# ============================================================================
+
+
+class Participant(Protocol):
+    """A player (AI or human) that can make decisions.
+
+    The handler queries participants for their decisions during subphases.
+    Participants return raw strings - handlers are responsible for parsing
+    and validation.
+    """
+
+    async def decide(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        hint: Optional[str] = None,
+    ) -> str:
+        """Make a decision and return raw response string.
+
+        Args:
+            system_prompt: System instructions defining the role/constraints
+            user_prompt: User prompt with current game state
+            hint: Optional hint for invalid previous attempts
+
+        Returns:
+            Raw response string to be parsed by the handler
+        """
+        ...
 
 
 # ============================================================================
@@ -58,37 +213,48 @@ class DeathResolutionHandler:
 
     Responsibilities:
     1. Process deaths from NightOutcome (WEREWOLF_KILL or POISON)
-    2. Generate DeathEvent for each death with:
-       - cause: matches the death source
-       - last_words: Night 1 only (night 2+ no last words)
-       - hunter_shoot_target: if Hunter + WEREWOLF_KILL (None = skipped)
-       - badge_transfer_to: if Sheriff (None = skipped)
+    2. Query dying participants for:
+       - Last words (Night 1 only)
+       - Hunter shoot target (if Hunter + WEREWOLF_KILL)
+       - Badge transfer (if Sheriff)
 
     Validation Rules:
     - Hunter can ONLY shoot if killed by WEREWOLF_KILL
     - Hunter cannot shoot if POISONED
     - Badge transfer target must be living
     - Hunter shoot target must be living
-
-    This is engine-only logic - no participants are consulted.
     """
 
-    def __call__(
+    # Maximum retry attempts for invalid input
+    max_retries: int = 3
+
+    async def __call__(
         self,
         context: "PhaseContext",
         night_outcome: "NightOutcomeInput",
+        participants: Optional[Sequence[tuple[int, Participant]]] = None,
     ) -> HandlerResult:
         """Execute the DeathResolution subphase for night deaths.
 
         Args:
             context: Game state with players, living/dead, sheriff
             night_outcome: NightOutcome with deaths dict {seat: DeathCause}
+            participants: Sequence of (seat, Participant) tuples for dying players
 
         Returns:
             HandlerResult with SubPhaseLog containing DeathEvent(s)
         """
         events = []
         deaths = night_outcome.deaths
+
+        # Convert participants to dict for easier lookup
+        if participants is not None:
+            if isinstance(participants, dict):
+                participant_dict = participants
+            else:
+                participant_dict = dict(participants)
+        else:
+            participant_dict = {}
 
         # No deaths - return empty result
         if not deaths:
@@ -102,11 +268,13 @@ class DeathResolutionHandler:
 
         # Process each death
         for seat, cause in sorted(deaths.items()):
-            death_event = self._create_death_event(
+            participant = participant_dict.get(seat)
+            death_event = await self._create_death_event(
                 context=context,
                 seat=seat,
                 cause=cause,
                 day=night_outcome.day,
+                participant=participant,
             )
             events.append(death_event)
 
@@ -121,12 +289,13 @@ class DeathResolutionHandler:
             debug_info=debug_info,
         )
 
-    def _create_death_event(
+    async def _create_death_event(
         self,
         context: "PhaseContext",
         seat: int,
         cause: DeathCause,
         day: int,
+        participant: Optional[Participant] = None,
     ) -> DeathEvent:
         """Create a DeathEvent for a single death.
 
@@ -135,26 +304,38 @@ class DeathResolutionHandler:
             seat: Dead player seat
             cause: DeathCause (WEREWOLF_KILL or POISON)
             day: Current day number
+            participant: Participant for querying AI/human decisions
 
         Returns:
             DeathEvent with all associated actions resolved
         """
         player = context.get_player(seat)
+        if player is None:
+            player = Player(seat=seat, role=Role.ORDINARY_VILLAGER)
 
-        # Last words: Night 1 only (night 2+ no last words for night deaths)
-        last_words = self._get_last_words(context, seat, day)
+        # Query last words (Night 1 only)
+        last_words = await self._get_last_words(
+            context=context,
+            seat=seat,
+            day=day,
+            participant=participant,
+        )
 
-        # Hunter shoot: only if Hunter + WEREWOLF_KILL
-        hunter_shoot_target = self._get_hunter_shoot_target(
+        # Query hunter shoot target (only if Hunter + WEREWOLF_KILL)
+        hunter_shoot_target = await self._get_hunter_shoot_target(
             context=context,
             seat=seat,
             cause=cause,
+            day=day,
+            participant=participant,
         )
 
-        # Badge transfer: only if Sheriff
-        badge_transfer_to = self._get_badge_transfer(
+        # Query badge transfer (only if Sheriff)
+        badge_transfer_to = await self._get_badge_transfer(
             context=context,
             seat=seat,
+            day=day,
+            participant=participant,
         )
 
         return DeathEvent(
@@ -168,38 +349,90 @@ class DeathResolutionHandler:
             day=day,
         )
 
-    def _get_last_words(
+    async def _get_last_words(
         self,
         context: "PhaseContext",
         seat: int,
         day: int,
+        participant: Optional[Participant] = None,
     ) -> Optional[str]:
-        """Get last words for a night death.
-
-        Night 1 deaths: last words allowed
-        Night 2+ deaths: no last words
+        """Get last words from dying player (Night 1 only).
 
         Args:
             context: Game state
             seat: Dead player seat
             day: Current day number
+            participant: Participant for AI query
 
         Returns:
-            Last words string or None (night 2+)
+            Last words string or None (night 2+ or no participant)
         """
-        if day == 1:
-            return self._generate_last_words(context, seat)
-        return None
+        # Night 2+ no last words for night deaths
+        if day > 1:
+            return None
 
-    def _generate_last_words(
+        # If no participant, use template
+        if participant is None:
+            return self._generate_last_words_template(context, seat)
+
+        # Build prompts
+        system, user = self._build_last_words_prompts(context, seat, day)
+
+        # Query participant
+        try:
+            response = await participant.decide(system, user)
+            # Validate response
+            if response and len(response.strip()) >= 10:
+                return response.strip()
+        except Exception:
+            pass
+
+        # Fallback to template
+        return self._generate_last_words_template(context, seat)
+
+    def _build_last_words_prompts(
+        self,
+        context: "PhaseContext",
+        seat: int,
+        day: int,
+    ) -> tuple[str, str]:
+        """Build system and user prompts for last words.
+
+        Args:
+            context: Game state
+            seat: Dying player seat
+            day: Current day number
+
+        Returns:
+            (system_prompt, user_prompt)
+        """
+        player = context.get_player(seat)
+        role_name = player.role.name.replace("_", " ").title() if player else "Unknown"
+
+        living_seats = sorted(context.living_players - {seat})
+        dead_seats = sorted(context.dead_players)
+
+        system = PROMPT_LAST_WORDS_SYSTEM.format(
+            seat=seat,
+            role_name=role_name,
+            day=day,
+        )
+        user = PROMPT_LAST_WORDS_USER.format(
+            day=day,
+            seat=seat,
+            role_name=role_name,
+            living_seats=", ".join(map(str, living_seats)) if living_seats else "None",
+            dead_seats=", ".join(map(str, dead_seats)) if dead_seats else "None",
+        )
+
+        return system, user
+
+    def _generate_last_words_template(
         self,
         context: "PhaseContext",
         seat: int,
     ) -> str:
-        """Generate last words for a dying player (Night 1 only).
-
-        This generates appropriate last words based on the player's role
-        and game state.
+        """Generate last words template for a dying player.
 
         Args:
             context: Game state
@@ -252,13 +485,15 @@ class DeathResolutionHandler:
         """Generate last words for a dying Villager."""
         return "I am an Ordinary Villager. Find the wolves!"
 
-    def _get_hunter_shoot_target(
+    async def _get_hunter_shoot_target(
         self,
         context: "PhaseContext",
         seat: int,
         cause: DeathCause,
+        day: int,
+        participant: Optional[Participant] = None,
     ) -> Optional[int]:
-        """Get hunter shoot target if applicable.
+        """Get hunter shoot target from participant.
 
         Hunter can ONLY shoot if:
         1. Dead player is Hunter
@@ -268,6 +503,8 @@ class DeathResolutionHandler:
             context: Game state
             seat: Dead player seat (potential Hunter)
             cause: DeathCause
+            day: Current day number
+            participant: Participant for AI query
 
         Returns:
             Hunter shoot target (None = skipped or not applicable)
@@ -283,17 +520,109 @@ class DeathResolutionHandler:
         if cause != DeathCause.WEREWOLF_KILL:
             return None
 
-        # Generate AI decision for hunter shoot target
+        # If no participant, use template
+        if participant is None:
+            return self._choose_hunter_shoot_target(context, seat)
+
+        # Build prompts
+        system, user = self._build_hunter_shoot_prompts(context, seat, day)
+
+        # Query participant with retries
+        for attempt in range(self.max_retries):
+            try:
+                response = await participant.decide(system, user)
+                target = self._parse_hunter_shoot_response(response, context, seat)
+                if target is not None:
+                    return target
+            except Exception:
+                pass
+
+            # Provide hint on retry
+            hint = "Please enter a valid seat number or SKIP."
+            try:
+                response = await participant.decide(system, user, hint)
+                target = self._parse_hunter_shoot_response(response, context, seat)
+                if target is not None:
+                    return target
+            except Exception:
+                break
+
+        # Fallback to template
         return self._choose_hunter_shoot_target(context, seat)
+
+    def _build_hunter_shoot_prompts(
+        self,
+        context: "PhaseContext",
+        hunter_seat: int,
+        day: int,
+    ) -> tuple[str, str]:
+        """Build system and user prompts for hunter shoot decision.
+
+        Args:
+            context: Game state
+            hunter_seat: Hunter's seat (dying)
+            day: Current day number
+
+        Returns:
+            (system_prompt, user_prompt)
+        """
+        living_players = sorted(context.living_players - {hunter_seat})
+
+        # Identify werewolves for hint
+        werewolves = [s for s in living_players if context.is_werewolf(s)]
+        werewolf_hint = f"Known werewolves: {werewolves}" if werewolves else "No known werewolves."
+
+        system = PROMPT_HUNTER_SHOOT_SYSTEM.format(hunter_seat=hunter_seat)
+        user = PROMPT_HUNTER_SHOOT_USER.format(
+            day=day,
+            hunter_seat=hunter_seat,
+            living_seats=", ".join(map(str, living_players)),
+            werewolf_hint=werewolf_hint,
+        )
+
+        return system, user
+
+        return system, user
+
+    def _parse_hunter_shoot_response(
+        self,
+        response: str,
+        context: "PhaseContext",
+        hunter_seat: int,
+    ) -> Optional[int]:
+        """Parse hunter shoot response.
+
+        Args:
+            response: Raw response from participant
+            context: Game state for validation
+            hunter_seat: Hunter's seat
+
+        Returns:
+            Valid target seat or None
+        """
+        response = response.strip()
+
+        # Handle SKIP variants
+        if response.upper() in ("SKIP", "NONE", "-1", "PASS"):
+            return None
+
+        # Try to parse as seat number
+        try:
+            target = int(response)
+            living_players = context.living_players - {hunter_seat}
+            if target in living_players:
+                return target
+        except ValueError:
+            pass
+
+        return None
 
     def _choose_hunter_shoot_target(
         self,
         context: "PhaseContext",
         hunter_seat: int,
     ) -> Optional[int]:
-        """Choose hunter shoot target (AI decision).
-
-        Hunter chooses one living player to shoot, or None to skip.
+        """Choose hunter shoot target (template fallback).
 
         Args:
             context: Game state
@@ -302,44 +631,41 @@ class DeathResolutionHandler:
         Returns:
             Target seat to shoot, or None to skip
         """
-        # Get living players (excluding the hunter who is about to die)
         living_candidates = sorted(context.living_players - {hunter_seat})
 
         if not living_candidates:
             return None
 
-        # AI strategy: prefer werewolves, then random
-        # This is a simplified strategy - in a full implementation,
-        # this would involve AI reasoning
-
-        # Try to identify werewolves among living players
+        # Try to identify werewolves
         werewolf_candidates = [
             seat for seat in living_candidates
             if context.is_werewolf(seat)
         ]
 
         if werewolf_candidates:
-            # Shoot lowest seat werewolf
             return min(werewolf_candidates)
 
-        # No obvious werewolves - skip or pick random
-        # 50% chance to skip, 50% chance to pick random
+        # No obvious werewolves - 50% chance to skip
         import random
         if random.random() < 0.5:
             return None
 
         return min(living_candidates)
 
-    def _get_badge_transfer(
+    async def _get_badge_transfer(
         self,
         context: "PhaseContext",
         seat: int,
+        day: int,
+        participant: Optional[Participant] = None,
     ) -> Optional[int]:
-        """Get badge transfer target if dead player is Sheriff.
+        """Get badge transfer target from participant.
 
         Args:
             context: Game state
             seat: Dead player seat (potential Sheriff)
+            day: Current day number
+            participant: Participant for AI query
 
         Returns:
             Badge transfer target or None
@@ -351,17 +677,107 @@ class DeathResolutionHandler:
         if not player.is_sheriff:
             return None
 
-        # Generate AI decision for badge transfer
+        # If no participant, use template
+        if participant is None:
+            return self._choose_badge_heir(context, seat)
+
+        # Build prompts
+        system, user = self._build_badge_transfer_prompts(context, seat, day)
+
+        # Query participant with retries
+        for attempt in range(self.max_retries):
+            try:
+                response = await participant.decide(system, user)
+                target = self._parse_badge_transfer_response(response, context, seat)
+                if target is not None:
+                    return target
+            except Exception:
+                pass
+
+            # Provide hint on retry
+            hint = "Please enter a valid seat number or SKIP."
+            try:
+                response = await participant.decide(system, user, hint)
+                target = self._parse_badge_transfer_response(response, context, seat)
+                if target is not None:
+                    return target
+            except Exception:
+                break
+
+        # Fallback to template
         return self._choose_badge_heir(context, seat)
+
+    def _build_badge_transfer_prompts(
+        self,
+        context: "PhaseContext",
+        sheriff_seat: int,
+        day: int,
+    ) -> tuple[str, str]:
+        """Build system and user prompts for badge transfer.
+
+        Args:
+            context: Game state
+            sheriff_seat: Sheriff's seat (dying)
+            day: Current day number
+
+        Returns:
+            (system_prompt, user_prompt)
+        """
+        living_players = sorted(context.living_players - {sheriff_seat})
+
+        # Identify trusted players for hint
+        trusted = [s for s in living_players if not context.is_werewolf(s)]
+        trusted_hint = f"Trusted players: {trusted}" if trusted else "No known trusted players."
+
+        system = PROMPT_BADGE_TRANSFER_SYSTEM.format(sheriff_seat=sheriff_seat)
+        user = PROMPT_BADGE_TRANSFER_USER.format(
+            day=day,
+            sheriff_seat=sheriff_seat,
+            living_seats=", ".join(map(str, living_players)),
+            trusted_hint=trusted_hint,
+        )
+
+        return system, user
+
+    def _parse_badge_transfer_response(
+        self,
+        response: str,
+        context: "PhaseContext",
+        sheriff_seat: int,
+    ) -> Optional[int]:
+        """Parse badge transfer response.
+
+        Args:
+            response: Raw response from participant
+            context: Game state for validation
+            sheriff_seat: Sheriff's seat
+
+        Returns:
+            Valid heir seat or None
+        """
+        response = response.strip()
+
+        # Handle SKIP variants
+        if response.upper() in ("SKIP", "NONE", "-1", "PASS"):
+            return None
+
+        # Try to parse as seat number
+        try:
+            target = int(response)
+            living_players = context.living_players - {sheriff_seat}
+            if target in living_players:
+                return target
+        except ValueError:
+            pass
+
+        return None
 
     def _choose_badge_heir(
         self,
         context: "PhaseContext",
         sheriff_seat: int,
     ) -> Optional[int]:
-        """Choose badge heir (AI decision).
-
-        Sheriff designates a living player as badge heir, or None to skip.
+        """Choose badge heir (template fallback).
 
         Args:
             context: Game state
@@ -370,16 +786,10 @@ class DeathResolutionHandler:
         Returns:
             Heir seat or None to skip
         """
-        # Get living players (excluding the sheriff who is about to die)
         living_candidates = sorted(context.living_players - {sheriff_seat})
 
         if not living_candidates:
             return None
-
-        # AI strategy: prefer trusted players (God roles, then villagers)
-        # Prefer non-werewolves obviously
-        # This is a simplified strategy - in a full implementation,
-        # this would involve AI reasoning based on game state
 
         # Filter out werewolves
         trusted_candidates = [
@@ -388,7 +798,6 @@ class DeathResolutionHandler:
         ]
 
         if trusted_candidates:
-            # Choose lowest seat trusted player
             return min(trusted_candidates)
 
         # All remaining are werewolves - skip

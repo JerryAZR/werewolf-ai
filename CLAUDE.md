@@ -32,8 +32,24 @@ uv run python main.py
 
 **Event Log Hierarchy**: `GameEventLog` → `PhaseLog` (NIGHT/DAY/GAME_OVER) → `SubPhaseLog` → `GameEvent`
 
+**Handler Pattern**: Each micro-phase has a handler in `src/werewolf/handlers/` that:
+1. Receives `PhaseContext` with game state
+2. Queries participants (AI or human) for decisions
+3. Returns `HandlerResult` with `SubPhaseLog` containing game events
+4. Validates actions against game rules
+
+**Handler Interface** (`src/werewolf/handlers/__init__.py`):
+- `PhaseContext`: Contains phase, day, players dict, living/dead sets, night_actions, sheriff
+- `HandlerResult`: Contains `subphase_log` (all events from this subphase)
+
+**Night Action Accumulator**: Created fresh each night by the engine. Accumulates `kill_target`, `antidote_target`, `poison_target`, `guard_target`. Engine pre-fills persistent state (`antidote_used`, `poison_used`, `guard_prev_target`) each night. Handlers receive read-only accumulator and return events; engine updates accumulator after reading events.
+
 **12-Player Configuration**: Defined in `STANDARD_12_PLAYER_CONFIG` (src/werewolf/models/player.py:81):
 - 4 Werewolves, 1 Seer, 1 Witch, 1 Hunter, 1 Guard, 4 Ordinary Villagers
+
+**Testing AI**: `StubPlayer` in `src/werewolf/ai/stub_ai.py` generates valid random actions for testing. Use in tests via `test_handler_stub_integration.py`.
+
+**NOT YET IMPLEMENTED**: Game engine (`src/werewolf/engine/`) orchestrates handlers into game flow.
 
 ## Game Rules (Critical)
 
@@ -47,9 +63,27 @@ uv run python main.py
 - **Hidden Identity**: Eliminated players' roles are NOT revealed
 - **Last Words**: Night 1 deaths only; Day deaths always have last words
 
+## AI Prompts
+
+**Authoritative source**: [PROMPTS.md](PROMPTS.md) contains all AI prompts organized by phase/subphase.
+
+Prompts are defined as module-level constants in each handler (e.g., `PROMPT_LAST_WORDS_SYSTEM`, `PROMPT_HUNTER_SHOOT_USER`). When editing prompts, edit the constants in the handler code.
+
+**Key Response Formats**:
+| Phase | Expected Response |
+|-------|-------------------|
+| WerewolfAction | `-1` or seat number |
+| WitchAction | `PASS`, `ANTIDOTE {seat}`, `POISON {seat}` |
+| GuardAction | seat, `SKIP`, `PASS`, or `-1` |
+| SeerAction | seat (required, no skip) |
+| Voting | seat or `None`/`abstain` |
+| SheriffElection | candidate seat (required) |
+| OptOut | `opt out` or `stay` |
+
 ## Reference Docs
 
 - [RULES.md](RULES.md) - Complete game rules
 - [PHASES.md](PHASES.md) - Detailed phase definitions and flows
 - [PHASE_HANDLERS.md](PHASE_HANDLERS.md) - Handler input/output specs
+- [PROMPTS.md](PROMPTS.md) - AI prompt templates by phase
 - [PLAN.md](PLAN.md) - Implementation plan and testing strategy

@@ -384,6 +384,62 @@ class TestWerewolfActionEdgeCases:
         assert isinstance(kill_event, WerewolfKill)
         assert kill_event.target == 8
 
+    @pytest.mark.asyncio
+    async def test_werewolf_can_target_self(self):
+        """Test that werewolves can target themselves.
+
+        This is allowed per the rules - a werewolf may choose to die.
+        """
+        players = {
+            0: Player(seat=0, name="W1", role=Role.WEREWOLF, is_alive=True),
+            1: Player(seat=1, name="W2", role=Role.WEREWOLF, is_alive=True),
+            8: Player(seat=8, name="V1", role=Role.ORDINARY_VILLAGER, is_alive=True),
+        }
+        living = {0, 1, 8}
+        dead = {2, 3, 4, 5, 6, 7, 9, 10, 11}
+        context = PhaseContext(players, living, dead, sheriff=None, day=1)
+
+        # Werewolf 0 chooses to kill themselves
+        participants = {
+            0: MockParticipant("0"),  # Self-target
+            1: MockParticipant("0"),   # Votes for self-target
+        }
+
+        handler = WerewolfHandler()
+        result = await handler(context, [(0, participants[0]), (1, participants[1])])
+
+        kill_event = result.subphase_log.events[0]
+        assert isinstance(kill_event, WerewolfKill)
+        assert kill_event.target == 0  # Werewolf kills themselves
+
+    @pytest.mark.asyncio
+    async def test_werewolf_can_target_teammate(self):
+        """Test that werewolves can target their teammate.
+
+        This is allowed per the rules - werewolves may sacrifice each other.
+        """
+        players = {
+            0: Player(seat=0, name="W1", role=Role.WEREWOLF, is_alive=True),
+            1: Player(seat=1, name="W2", role=Role.WEREWOLF, is_alive=True),
+            8: Player(seat=8, name="V1", role=Role.ORDINARY_VILLAGER, is_alive=True),
+        }
+        living = {0, 1, 8}
+        dead = {2, 3, 4, 5, 6, 7, 9, 10, 11}
+        context = PhaseContext(players, living, dead, sheriff=None, day=1)
+
+        # Werewolf 0 chooses to kill teammate 1
+        participants = {
+            0: MockParticipant("1"),  # Target teammate
+            1: MockParticipant("8"),   # Target villager instead
+        }
+
+        handler = WerewolfHandler()
+        result = await handler(context, [(0, participants[0]), (1, participants[1])])
+
+        kill_event = result.subphase_log.events[0]
+        assert isinstance(kill_event, WerewolfKill)
+        assert kill_event.target == 1  # Werewolf 1 dies (lowest seat got most votes)
+
 
 class TestWerewolfActionPromptFiltering:
     """Tests for prompt filtering in WerewolfAction."""

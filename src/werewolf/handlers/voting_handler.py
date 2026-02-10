@@ -268,7 +268,7 @@ class VotingHandler:
         weight_note = " Your vote counts as 1.5!" if is_sheriff else ""
 
         # Build system prompt
-        system = f"""You are casting your vote on Day {context.day} to banish a suspected werewolf.
+        system = f"""You are casting your vote on Day {context.day} to decide who will be banished from the village.
 
 VOTING RULES:
 - You may vote for any living player (seat numbers only)
