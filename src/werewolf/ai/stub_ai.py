@@ -18,6 +18,7 @@ from werewolf.events.game_events import (
     Phase,
     SubPhase,
 )
+from werewolf.handlers.campaign_handler import CAMPAIGN_NOT_RUNNING
 from werewolf.models.player import Role
 
 
@@ -172,8 +173,8 @@ class StubPlayer:
             SubPhase.WITCH_ACTION: lambda r: r in ["pass"] or r.startswith(("antidote", "poison")),
             SubPhase.GUARD_ACTION: lambda r: r == "-1" or r.isdigit(),
             SubPhase.SEER_ACTION: lambda r: r.isdigit(),
-            # Campaign: either "not running" or a real speech (>10 chars)
-            SubPhase.CAMPAIGN: lambda r: r == "not running" or len(r) > 10,
+            # Campaign: either CAMPAIGN_NOT_RUNNING or a real speech (>10 chars)
+            SubPhase.CAMPAIGN: lambda r: r == CAMPAIGN_NOT_RUNNING or len(r) > 10,
             SubPhase.OPT_OUT: lambda r: r in ["run", "opt-out", "stay"],
             SubPhase.SHERIFF_ELECTION: lambda r: r.isdigit() or r == "abstain",
             SubPhase.DEATH_RESOLUTION: lambda r: len(r) > 5,  # Real last words
@@ -252,7 +253,7 @@ class StubPlayer:
         if is_campaign:
             # ~40% enter campaign (~5 out of 12), ~60% skip
             if random.random() < 0.6:
-                return "not running"
+                return CAMPAIGN_NOT_RUNNING
 
         speeches = [
             "I don't have much to say yet. I'll be watching carefully.",

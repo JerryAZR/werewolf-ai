@@ -17,6 +17,15 @@ from werewolf.models.player import Player, Role
 
 
 # ============================================================================
+# Campaign Response Protocol
+# ============================================================================
+
+# Valid responses for campaign phase
+CAMPAIGN_SPEECH = "speech"  # Valid campaign speech (non-empty)
+CAMPAIGN_NOT_RUNNING = "not running"  # Candidate declines to run
+
+
+# ============================================================================
 # Handler Result Types
 # ============================================================================
 
@@ -238,12 +247,13 @@ SHERIFF POWERS:
 - If eliminated, the Sheriff can transfer the badge to another player
 - The Sheriff speaks LAST during all discussion phases
 
-CAMPAIGN RULES:
-- You will give a campaign speech to convince other players to vote for you
-- Be persuasive, show your leadership potential, and build trust
-- You may reveal your role or keep it secret - both are valid strategies
-- Your speech should be unique to you based on your role and strategy
-- You speak in position {position} of {total}{sheriff_note}
+CAMPAIGN RESPONSE PROTOCOL:
+You have two choices:
+1. Give a campaign speech (any non-empty text)
+2. Say "not running" to decline from running for Sheriff
+
+If you give a speech, it will be visible to all players.
+If you say "not running", you will not appear in the election.
 
 Your response should be your campaign speech as a single string.
 Make it compelling and appropriate for a social deduction game."""
@@ -261,19 +271,14 @@ SHERIFF CANDIDATES (seats): {other_candidates_str if other_candidates else 'None
 SPEAKING ORDER:
   Position: {position} of {total}{sheriff_note}
 
-CAMPAIGN INSTRUCTIONS:
-  This is your chance to convince other players to vote for you as Sheriff.
-  The Sheriff has 1.5x vote weight and speaks last during discussions.
+CAMPAIGN RESPONSE:
+  You may either:
+  - Give a campaign speech (type your speech)
+  - Decline to run (type: "not running")
 
-  Tips:
-  - Be persuasive and show leadership
-  - Build trust with other players
-  - Consider your role strategy (e.g., as a Werewolf, you may want to appear helpful)
-  - Do NOT reveal your specific role - keep some mystery
-  - Make a memorable impression
+  Your speech should convince others to vote for you as Sheriff.
 
-  Your speech:
-  (Enter your campaign speech below - must be non-empty)"""
+  Your response:"""
 
         return system, user
 
@@ -286,6 +291,10 @@ CAMPAIGN INSTRUCTIONS:
     ) -> Optional[Speech]:
         """Get valid campaign speech from participant with retry.
 
+        Campaign Response Protocol:
+        - "not running" (case-insensitive): Candidate declines to run, returns None
+        - Any non-empty text: Valid campaign speech, returns Speech event
+
         Args:
             context: Game state
             participant: The participant to query
@@ -293,10 +302,10 @@ CAMPAIGN INSTRUCTIONS:
             candidates: List of all candidates (ordered)
 
         Returns:
-            Valid Speech event, or None if participant says "not running"
+            Speech event, or None if participant says "not running"
 
         Raises:
-            MaxRetriesExceededError: If max retries are exceeded without valid speech
+            MaxRetriesExceededError: If max retries are exceeded without valid input
         """
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, for_seat, candidates)
@@ -319,8 +328,8 @@ CAMPAIGN INSTRUCTIONS:
                 raw = await participant.decide(system, user, hint=hint)
                 content = raw.strip().lower()
 
-            # Check for "not running" response
-            if content == "not running":
+            # Check for NOT_RUNNING response
+            if content == CAMPAIGN_NOT_RUNNING:
                 return None
 
             if raw.strip():
