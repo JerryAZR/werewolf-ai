@@ -442,6 +442,86 @@ class TestWerewolfGameEventLogStructure:
 
 
 # ============================================================================
+# Validator Integration Tests
+# ============================================================================
+
+class TestWerewolfGameValidator:
+    """Tests for game validation with CollectingValidator."""
+
+    @pytest.mark.asyncio
+    async def test_complete_game_with_validator_no_violations(
+        self, standard_players: dict[int, Player]
+    ):
+        """Smoke test: Run complete game with CollectingValidator and verify no violations.
+
+        This test runs a full game with all validators enabled and ensures:
+        1. The game completes successfully
+        2. No validation rules are violated
+        3. The game state remains consistent throughout
+        """
+        from werewolf.engine import CollectingValidator
+
+        validator = CollectingValidator()
+        participants = create_participants(standard_players, seed=42)
+
+        game = WerewolfGame(
+            players=standard_players,
+            participants=participants,
+            validator=validator,
+        )
+
+        event_log, winner = await game.run()
+
+        # Verify game produced a result
+        assert event_log is not None
+        assert winner in ["WEREWOLF", "VILLAGER"]
+        assert event_log.game_over is not None
+
+        # Get any validation violations
+        violations = validator.get_violations()
+
+        # Report violations if any found
+        if violations:
+            violation_msgs = "\n".join(
+                f"  [{v.rule_id}] {v.message}" for v in violations
+            )
+            pytest.fail(
+                f"Game completed but {len(violations)} validation rule(s) were violated:\n"
+                f"{violation_msgs}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_validator_detects_intentional_violation(
+        self, standard_players: dict[int, Player]
+    ):
+        """Test that the validator infrastructure is working by testing a specific rule.
+
+        This creates a modified game state that violates a known rule and verifies
+        the validator catches it.
+        """
+        from werewolf.engine import CollectingValidator
+        from werewolf.validation.state_consistency import validate_state_consistency
+
+        validator = CollectingValidator()
+
+        # Create an intentionally inconsistent state
+        state = GameState(
+            players=standard_players,
+            living_players=set(standard_players.keys()),
+            dead_players={0},  # Player 0 is marked dead but also in living_players
+        )
+
+        # Validate - should detect the inconsistency
+        violations = validate_state_consistency(state, None)
+
+        # Should find at least one violation for M.2 (living & dead not disjoint)
+        rule_ids = [v.rule_id for v in violations]
+        assert "M.2" in rule_ids, (
+            f"Expected M.2 violation for overlapping living/dead sets, got: {rule_ids}"
+        )
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
