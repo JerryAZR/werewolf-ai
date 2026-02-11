@@ -1,5 +1,6 @@
 """Tests for NightScheduler - night phase orchestration."""
 
+import random
 import pytest
 from typing import Optional
 
@@ -13,6 +14,7 @@ from werewolf.models import (
     Player,
     Role,
     STANDARD_12_PLAYER_CONFIG,
+    create_players_from_config,
 )
 from werewolf.events import (
     Phase,
@@ -26,18 +28,17 @@ from werewolf.ai.stub_ai import StubPlayer
 # Helper types and functions
 # ============================================================================
 
-def create_players_from_config() -> dict[int, Player]:
-    """Create a dict of players from standard config."""
+def create_players_shuffled(seed: int | None = None) -> dict[int, Player]:
+    """Create a dict of players with shuffled roles from standard config."""
+    rng = random.Random(seed)
+    role_assignments = create_players_from_config(rng=rng)
     players = {}
-    seat = 0
-    for role_config in STANDARD_12_PLAYER_CONFIG:
-        for _ in range(role_config.count):
-            players[seat] = Player(
-                seat=seat,
-                name=f"Player {seat}",
-                role=role_config.role,
-            )
-            seat += 1
+    for seat, role in role_assignments:
+        players[seat] = Player(
+            seat=seat,
+            name=f"Player {seat}",
+            role=role,
+        )
     return players
 
 
@@ -47,8 +48,8 @@ def create_players_from_config() -> dict[int, Player]:
 
 @pytest.fixture
 def players() -> dict[int, Player]:
-    """Create standard 12-player config as dict."""
-    return create_players_from_config()
+    """Create standard 12-player config as dict with shuffled roles."""
+    return create_players_shuffled()
 
 
 @pytest.fixture

@@ -1,5 +1,6 @@
 """Player and Role models."""
 
+import random
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
@@ -86,3 +87,32 @@ STANDARD_12_PLAYER_CONFIG = [
     RoleConfig(role=Role.HUNTER, count=1, description="Shoot someone when you die"),
     RoleConfig(role=Role.ORDINARY_VILLAGER, count=4, description="Help villagers find werewolves"),
 ]
+
+
+def create_players_from_config(
+    seat_count: int = 12,
+    rng: Optional[random.Random] = None,
+) -> list[tuple[int, Role]]:
+    """Create shuffled role assignments for a game.
+
+    Args:
+        seat_count: Number of seats (default 12).
+        rng: Optional random.Random instance for reproducible shuffling.
+             If None, uses random.shuffle directly.
+
+    Returns:
+        List of (seat, Role) tuples with roles shuffled.
+    """
+    # Build list of roles from config
+    roles: list[Role] = []
+    for role_config in STANDARD_12_PLAYER_CONFIG:
+        roles.extend([role_config.role] * role_config.count)
+
+    # Shuffle the roles
+    if rng is not None:
+        rng.shuffle(roles)
+    else:
+        random.shuffle(roles)
+
+    # Assign to seats
+    return [(seat, roles[seat]) for seat in range(seat_count)]

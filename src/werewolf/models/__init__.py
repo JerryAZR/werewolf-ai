@@ -8,6 +8,7 @@ from werewolf.models.player import (
     PlayerSecret,
     RoleConfig,
     STANDARD_12_PLAYER_CONFIG,
+    create_players_from_config,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "PlayerSecret",
     "RoleConfig",
     "STANDARD_12_PLAYER_CONFIG",
+    "create_players_from_config",
 ]

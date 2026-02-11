@@ -19,7 +19,7 @@ from typing import Optional
 
 import pytest
 
-from werewolf.models import Player, Role, STANDARD_12_PLAYER_CONFIG
+from werewolf.models import Player, Role, STANDARD_12_PLAYER_CONFIG, create_players_from_config
 from werewolf.engine import WerewolfGame, CollectingValidator
 from werewolf.ai.stub_ai import create_stub_player
 from werewolf.events import GameOver, VictoryCondition
@@ -29,23 +29,21 @@ from werewolf.events import GameOver, VictoryCondition
 # Helper Functions
 # ============================================================================
 
-def create_players_from_config(seed: int | None = None) -> dict[int, Player]:
-    """Create a dict of players from standard config.
+def create_players_from_config_shuffled(seed: int | None = None) -> dict[int, Player]:
+    """Create a dict of players with shuffled roles from standard config.
 
     Args:
-        seed: Optional seed for reproducible player creation.
-              Each player gets seat + seed as their random seed.
+        seed: Optional seed for reproducible role shuffling and AI decisions.
     """
+    rng = random.Random(seed)
+    role_assignments = create_players_from_config(rng=rng)
     players = {}
-    seat = 0
-    for role_config in STANDARD_12_PLAYER_CONFIG:
-        for _ in range(role_config.count):
-            players[seat] = Player(
-                seat=seat,
-                name=f"Player {seat}",
-                role=role_config.role,
-            )
-            seat += 1
+    for seat, role in role_assignments:
+        players[seat] = Player(
+            seat=seat,
+            name=f"Player {seat}",
+            role=role,
+        )
     return players
 
 
@@ -81,8 +79,8 @@ def create_participants(players: dict[int, Player], seed: int) -> dict:
 
 @pytest.fixture
 def standard_players() -> dict[int, Player]:
-    """Create standard 12-player config as dict."""
-    return create_players_from_config()
+    """Create standard 12-player config as dict with shuffled roles."""
+    return create_players_from_config_shuffled()
 
 
 # ============================================================================
