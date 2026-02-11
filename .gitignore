@@ -47,3 +47,7 @@ env/
 
 # OS
 Thumbs.db
+
+# Generated files
+*.yaml
+*.log
