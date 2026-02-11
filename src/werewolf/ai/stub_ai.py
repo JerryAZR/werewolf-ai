@@ -12,7 +12,7 @@ what's being asked and returns a valid response.
 
 import random
 import re
-from typing import Optional, Protocol
+from typing import Optional, Protocol, Any
 
 from werewolf.events.game_events import (
     Phase,
@@ -30,8 +30,16 @@ class Participant(Protocol):
         system_prompt: str,
         user_prompt: str,
         hint: Optional[str] = None,
+        choices: Optional[Any] = None,
     ) -> str:
-        """Make a decision and return raw response string."""
+        """Make a decision and return raw response string.
+
+        Args:
+            system_prompt: System instructions defining the role/constraints
+            user_prompt: User prompt with current game state
+            hint: Optional hint for invalid previous attempts
+            choices: Optional ChoiceSpec for structured TUI selection
+        """
         ...
 
 
@@ -40,6 +48,9 @@ class StubPlayer:
 
     Parses the prompt to understand what action is being requested,
     then generates a valid random response. Handles retries gracefully.
+
+    When choices are provided, selects directly from valid options
+    instead of parsing the prompt. This ensures always-valid responses.
     """
 
     def __init__(self, seed: Optional[int] = None):
@@ -54,13 +65,21 @@ class StubPlayer:
         system_prompt: str,
         user_prompt: str,
         hint: Optional[str] = None,
+        choices: Optional[Any] = None,
     ) -> str:
-        """Parse prompt and return a valid action string."""
+        """Parse prompt and return a valid action string.
+
+        When choices is provided, select from valid options instead of
+        parsing the prompt. This ensures always-valid responses.
+        """
         combined = f"{system_prompt}\n{user_prompt}"
 
-        # Detect which phase/subphase from the prompt
-        subphase = self._detect_subphase(combined)
+        # If choices provided, use them for guaranteed valid response
+        if choices is not None:
+            return self._choose_from_spec(choices)
 
+        # Otherwise, detect phase and generate response
+        subphase = self._detect_subphase(combined)
         response = await self._generate_response(subphase, combined, hint)
 
         # If hint provided, validate response and retry if invalid
@@ -70,6 +89,52 @@ class StubPlayer:
 
         self._last_response = response
         return response
+
+    def _choose_from_spec(self, choices: Any) -> str:
+        """Choose a valid response from ChoiceSpec or raw options.
+
+        Args:
+            choices: Either a ChoiceSpec object or a list of (label, value) tuples
+
+        Returns:
+            A valid choice value as string
+        """
+        # Check if it has options attribute (ChoiceSpec from werewolf.ui)
+        if hasattr(choices, 'options') and choices.options:
+            opts = choices.options
+            if isinstance(opts, list):
+                if len(opts) == 0:
+                    return "0"
+                # List of (label, value) tuples
+                if isinstance(opts[0], tuple) and len(opts[0]) >= 2:
+                    values = [str(v) for _, v in opts]
+                else:
+                    # List of just values
+                    values = [str(v) for v in opts]
+                return str(random.choice(values))
+
+        # Check if it's a list of tuples (label, value)
+        if isinstance(choices, list) and choices:
+            if isinstance(choices[0], tuple):
+                values = [str(v) for _, v in choices]
+                return str(random.choice(values))
+
+        # Check if it's a dict
+        if isinstance(choices, dict) and choices:
+            values = list(choices.values())
+            return str(random.choice(values))
+
+        # Fallback: try to parse as raw options
+        if hasattr(choices, '__iter__') and not isinstance(choices, str):
+            try:
+                values = [str(v) for v in choices]
+                if values:
+                    return str(random.choice(values))
+            except (TypeError, ValueError):
+                pass
+
+        # Ultimate fallback
+        return "0"
 
     def _detect_subphase(self, text: str) -> SubPhase:
         """Detect which subphase from prompt text."""

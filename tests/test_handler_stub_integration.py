@@ -475,6 +475,97 @@ class TestFullNightIntegration:
 
 
 # ============================================================================
+# StubPlayer with Choices Parameter Tests
+# ============================================================================
+
+class TestStubPlayerChoices:
+    """Tests: StubPlayer using choices parameter."""
+
+    @pytest.mark.asyncio
+    async def test_stub_with_choices_list(self):
+        """Test StubPlayer chooses from list of (label, value) tuples."""
+        from werewolf.ai.stub_ai import StubPlayer
+
+        stub = StubPlayer(seed=42)
+
+        # Provide choices as list of (label, value) tuples
+        choices = [
+            ("Player 0 [Ordinary Villager]", "0"),
+            ("Player 1 [Ordinary Villager]", "1"),
+            ("Player 3 [Seer]", "3"),
+            ("Skip / Abstain", "-1"),
+        ]
+
+        response = await stub.decide("", "", choices=choices)
+
+        # Should return one of the valid values
+        valid_values = ["0", "1", "3", "-1"]
+        assert response in valid_values
+
+    @pytest.mark.asyncio
+    async def test_stub_with_choices_dict(self):
+        """Test StubPlayer chooses from dict values."""
+        from werewolf.ai.stub_ai import StubPlayer
+
+        stub = StubPlayer(seed=123)
+
+        # StubPlayer(seed= Provide choices as dict
+        choices = {
+            "option_a": "PASS",
+            "option_b": "ANTIDOTE 0",
+            "option_c": "POISON 1",
+        }
+
+        response = await stub.decide("", "", choices=choices)
+
+        # Should return one of the valid values
+        assert response in ["PASS", "ANTIDOTE 0", "POISON 1"]
+
+    @pytest.mark.asyncio
+    async def test_stub_without_choices_parses_prompt(self):
+        """Test StubPlayer without choices parses prompt for living players."""
+        from werewolf.ai.stub_ai import StubPlayer
+
+        stub = StubPlayer(seed=456)
+
+        # Prompt that looks like a voting request (contains "vote" and "banish")
+        prompt = """
+        Who do you want to banish?
+
+        Living players: 0, 1, 3, 4, 5
+        Dead players: 2, 6
+        """
+
+        # Without choices, should detect VOTING and return a seat or abstain
+        response = await stub.decide("", prompt)
+
+        # Should return a valid vote response (seat number or abstain)
+        valid_responses = ["0", "1", "3", "4", "5", "ABSTAIN"]
+        assert response in valid_responses, f"Got: {response}"
+
+    @pytest.mark.asyncio
+    async def test_stub_choices_guarantees_valid_response(self):
+        """Test that choices parameter ensures valid response format."""
+        from werewolf.ai.stub_ai import StubPlayer
+
+        stub = StubPlayer(seed=999)
+
+        # Force seed to get specific output, but choices should override
+        # Even if parsing would fail, choices guarantee valid response
+        choices = [
+            ("Player 0", "0"),
+            ("Player 1", "1"),
+        ]
+
+        # Run multiple times to ensure consistency
+        responses = [await stub.decide("", "", choices=choices) for _ in range(5)]
+
+        # All responses should be valid choices
+        for response in responses:
+            assert response in ["0", "1"]
+
+
+# ============================================================================
 # Run tests
 # ============================================================================
 
