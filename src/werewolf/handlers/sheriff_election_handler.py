@@ -81,7 +81,7 @@ class SheriffElectionHandler:
 
     Responsibilities:
     1. Validate that day == 1
-    2. Collect votes from all living players (no abstention)
+    2. Collect votes from non-candidates only (candidates cannot vote, no abstention)
     3. Calculate weighted vote totals (Sheriff = 1.5, others = 1.0)
     4. Determine winner (majority wins, tie = no Sheriff)
     5. Return SheriffOutcome event
@@ -90,7 +90,7 @@ class SheriffElectionHandler:
     - Remaining candidates after OptOut (seats only)
     - All living players (seats only)
     - Sheriff vote weight = 1.5
-    - No abstention rule (must vote)
+    - No abstention rule (non-candidates must vote)
 
     What voters do NOT see:
     - Other players' votes (secret ballot)
@@ -126,14 +126,8 @@ class SheriffElectionHandler:
                 debug_info="Sheriff election only occurs on Day 1",
             )
 
-        # Filter to living candidates only
-        living_candidates = [
-            seat for seat in sheriff_candidates
-            if context.is_alive(seat)
-        ]
-
         # Edge case: no candidates
-        if not living_candidates:
+        if not sheriff_candidates:
             outcome = SheriffOutcome(
                 day=context.day,
                 phase=Phase.DAY,
@@ -148,7 +142,6 @@ class SheriffElectionHandler:
             debug_info = json.dumps({
                 "day": context.day,
                 "candidates": [],
-                "living_voters": len(context.living_players),
                 "reason": "No candidates after OptOut",
             })
 
@@ -163,17 +156,21 @@ class SheriffElectionHandler:
         # Build participant lookup
         participant_dict = dict(participants)
 
-        # Collect votes from all living players
+        # Collect votes from NON-CANDIDATES only (candidates cannot vote)
         votes: dict[int, float] = defaultdict(float)
 
-        for seat in context.living_players:
+        for seat, participant in participants:
+            # Skip candidates - they cannot vote
+            if seat in sheriff_candidates:
+                continue
+
             participant = participant_dict.get(seat)
             if participant:
                 target = await self._get_valid_vote(
                     context=context,
                     participant=participant,
                     voter_seat=seat,
-                    candidates=living_candidates,
+                    candidates=sheriff_candidates,
                 )
 
                 # Calculate vote weight (default 1.0, Sheriff 1.5)
@@ -193,7 +190,7 @@ class SheriffElectionHandler:
             day=context.day,
             phase=Phase.DAY,
             micro_phase=SubPhase.SHERIFF_ELECTION,
-            candidates=living_candidates,
+            candidates=sheriff_candidates,
             votes=dict(votes),
             winner=winner,
         )
@@ -203,8 +200,7 @@ class SheriffElectionHandler:
         import json
         debug_info = json.dumps({
             "day": context.day,
-            "candidates": living_candidates,
-            "living_voters": len(context.living_players),
+            "candidates": sheriff_candidates,
             "vote_totals": dict(votes),
             "total_votes": total_votes,
             "winner": winner,
@@ -280,14 +276,14 @@ SHERIFF POWERS:
 - The Sheriff speaks LAST during all discussion phases
 
 VOTING RULES:
-- You MUST vote for one of the candidates (no abstention)
+- You may vote for one of the candidates or abstain
 - Your vote is secret - no one will see who you voted for
 - The candidate with the most votes wins (1.5x weight if you are Sheriff)
 - Tie = no Sheriff elected
 
 CANDIDATES (seat numbers only): {candidates_str}
 
-Your response must be exactly the seat number of your chosen candidate.{weight_note}"""
+Your response must be exactly the seat number of your chosen candidate, or "None" to abstain.{weight_note}"""
 
         # Build user prompt
         user = f"""=== Day {context.day} - Sheriff Vote ===
@@ -298,12 +294,12 @@ CANDIDATES RUNNING FOR SHERIFF:
   Seats: {candidates_str}
 
 RULES:
-  - You MUST choose one candidate (no abstention allowed)
+  - You may vote for a candidate or abstain
   - Your vote is secret
   - If you are the Sheriff, your vote counts as 1.5
 
 VOTE INSTRUCTIONS:
-  Enter the seat number of your chosen candidate:
+  Enter the seat number of your chosen candidate, or "None" to abstain:
   """
 
         return system, user
@@ -368,11 +364,16 @@ VOTE INSTRUCTIONS:
             valid_candidates: List of valid candidate seats
 
         Returns:
-            Voted seat number, or None if invalid
+            Voted seat number, or None if abstaining/invalid
         """
         try:
+            cleaned = raw_response.strip().lower()
+
+            # Allow abstention
+            if cleaned in ('none', 'abstain', 'skip', 'pass', ''):
+                return None
+
             # Try to parse as integer
-            cleaned = raw_response.strip()
             seat = int(cleaned)
 
             # Validate it's a valid candidate

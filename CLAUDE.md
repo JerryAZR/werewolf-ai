@@ -59,7 +59,13 @@ uv run python main.py
 
 **Testing AI**: `StubPlayer` in `src/werewolf/ai/stub_ai.py` generates valid random actions for testing. Use in tests via `test_handler_stub_integration.py`.
 
-**NOT YET IMPLEMENTED**: Game engine (`src/werewolf/engine/`) orchestrates handlers into game flow.
+**Engine Implementation** (`src/werewolf/engine/`):
+- `werewolf_game.py`: Main game controller orchestrating the complete game loop
+- `night_scheduler.py` / `day_scheduler.py`: Phase orchestration for night/day cycles
+- `night_action_store.py` / `night_action_resolver.py`: Night action accumulation and resolution
+- `event_collector.py`: Event log management
+- `game_state.py`: Core state models
+- `validator.py`: Game rule validation with runtime hooks
 
 ## Game Rules (Critical)
 
