@@ -67,6 +67,26 @@ uv run python main.py
 - `game_state.py`: Core state models
 - `validator.py`: Game rule validation with runtime hooks
 
+**Validation Module** (`src/werewolf/validation/`):
+
+Comprehensive runtime validation with 100+ rule checks organized by category:
+
+- `state_consistency.py`: M.1-M.7 state invariant checks
+- `initialization.py`: B.1-B.4 game initialization
+- `victory.py`: A.1-A.5 victory conditions
+- `night_*.py`: Night action validation (werewolf, witch, guard, seer)
+- `day_*.py`: Day action validation (sheriff, death, voting)
+- `hunter.py`: K.1-K.4 hunter action checks
+- `badge_transfer.py`: L.1-L.4 sheriff badge transfer
+- `phase_order.py`: C.1-C.15 phase ordering
+- `event_logging.py`: N.1-N.6 event logging validation
+
+**UI Module** (`src/werewolf/ui/`):
+
+- `interactive.py`: `InteractiveParticipant` for human players with TUI
+- `choices.py`: `ChoiceSpec` and `ChoiceType` for structured TUI menus
+- `prompt_session.py`: Prompt session management
+
 ## Game Rules (Critical)
 
 - **Victory**: "Slaughter the Side" - Werewolves win if all Gods OR all Villagers die
