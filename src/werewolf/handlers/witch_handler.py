@@ -16,6 +16,11 @@ from werewolf.events.game_events import (
 )
 from werewolf.models.player import Player, Role
 
+# Lazy import for ChoiceSpec to avoid circular imports
+def _get_choice_spec():
+    from werewolf.ui.choices import ChoiceSpec, make_action_choice, make_seat_choice
+    return ChoiceSpec, make_action_choice, make_seat_choice
+
 
 # ============================================================================
 # Handler Result Types
@@ -47,6 +52,9 @@ class Participant(Protocol):
     The handler queries participants for their decisions during subphases.
     Participants return raw strings - handlers are responsible for parsing
     and validation.
+
+    For interactive TUI play, handlers may provide a ChoiceSpec to guide
+    the participant's decision-making with structured choices.
     """
 
     async def decide(
@@ -54,6 +62,7 @@ class Participant(Protocol):
         system_prompt: str,
         user_prompt: str,
         hint: Optional[str] = None,
+        choices: Optional[Any] = None,
     ) -> str:
         """Make a decision and return raw response string.
 
@@ -61,6 +70,7 @@ class Participant(Protocol):
             system_prompt: System instructions defining the role/constraints
             user_prompt: User prompt with current game state
             hint: Optional hint for invalid previous attempts
+            choices: Optional ChoiceSpec for interactive TUI selection
 
         Returns:
             Raw response string to be parsed by the handler
@@ -283,6 +293,74 @@ AVAILABLE ACTIONS:
 Enter your action (e.g., "PASS", "ANTIDOTE 7", or "POISON 3"):"""
 
         return system, user
+
+    def build_choice_spec(
+        self,
+        context: "PhaseContext",
+        witch_seat: int,
+        night_actions: NightActions,
+    ) -> Optional[Any]:
+        """Build ChoiceSpec for interactive TUI.
+
+        Returns None if not enough info to build choices.
+        """
+        ChoiceSpec, make_action_choice, make_seat_choice = _get_choice_spec()
+
+        # Determine available actions
+        antidote_available = not night_actions.antidote_used
+        poison_available = not night_actions.poison_used
+        kill_target = night_actions.kill_target
+
+        living_players_sorted = [p for p in sorted(context.living_players) if p != witch_seat]
+
+        # Build action choices
+        actions = [("PASS", "Pass (do nothing)")]
+
+        # Build target choices based on available potions
+        target_info = {}
+
+        if antidote_available and kill_target is not None and kill_target != witch_seat:
+            actions.append(("ANTIDOTE", "Antidote (save werewolf target)"))
+            target_info[kill_target] = "Werewolf Target"
+
+        if poison_available:
+            actions.append(("POISON", "Poison (kill a player)"))
+            for seat in living_players_sorted:
+                player = context.get_player(seat)
+                if player:
+                    target_info[seat] = player.role.value
+
+        # If only PASS available, no need for choice spec
+        if len(actions) == 1:
+            return None
+
+        action_choice = make_action_choice(
+            prompt="Choose your action:",
+            actions=actions,
+            allow_none=False,  # User must pick an action
+        )
+
+        # If action requires target, we can't fully specify in one prompt
+        # Return special marker that handler will use for two-stage prompt
+        if (("ANTIDOTE" in [a[0] for a in actions]) or
+            ("POISON" in [a[0] for a in actions])):
+            # Return a dict that the handler can interpret
+            return {
+                "type": "witch_action",
+                "action_choices": action_choice,
+                "target_choices": make_seat_choice(
+                    prompt="Select target:",
+                    seats=list(target_info.keys()),
+                    seat_info=target_info,
+                    allow_none=False,
+                ),
+                "kill_target": kill_target,
+                "poison_available": poison_available,
+                "antidote_available": antidote_available,
+                "witch_seat": witch_seat,
+            }
+
+        return action_choice
 
     async def _get_valid_action(
         self,
