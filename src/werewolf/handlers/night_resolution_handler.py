@@ -20,14 +20,14 @@ Special Rules:
 from typing import Optional, Sequence
 from pydantic import BaseModel, Field
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     NightOutcome,
     DeathCause,
     Phase,
     SubPhase,
     GameEvent,
 )
-from src.werewolf.models.player import Player
+from werewolf.models.player import Player
 
 
 # ============================================================================
@@ -228,4 +228,4 @@ class NightResolutionHandler:
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.werewolf.handlers.werewolf_handler import PhaseContext
+    from werewolf.handlers.werewolf_handler import PhaseContext

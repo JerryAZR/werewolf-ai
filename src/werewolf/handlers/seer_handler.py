@@ -8,14 +8,14 @@ import re
 from typing import Protocol, Sequence, Optional, Any
 from pydantic import BaseModel, Field
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     SeerAction,
     SeerResult,
     Phase,
     SubPhase,
     GameEvent,
 )
-from src.werewolf.models.player import Player, Role
+from werewolf.models.player import Player, Role
 
 
 # ============================================================================

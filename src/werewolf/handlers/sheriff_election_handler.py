@@ -8,7 +8,7 @@ from typing import Protocol, Sequence, Optional, Any
 from collections import defaultdict
 from pydantic import BaseModel, Field
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     SheriffOutcome,
     Phase,
     SubPhase,

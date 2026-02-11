@@ -89,6 +89,10 @@ class StubPlayer:
         if "seer" in text_lower and "check" in text_lower:
             return SubPhase.SEER_ACTION
 
+        # Hunter Final Shot - use VOTING handler but _generate_response will detect and use special logic
+        if "hunter final shot" in text_lower:
+            return SubPhase.VOTING
+
         # Check for campaign/sheriff phases before discussion/voting
         # Sheriff election requires more specific "sheriff vote" pattern
         if "campaign" in text_lower or "sheriff" in text_lower:
@@ -122,7 +126,6 @@ class StubPlayer:
         # Fallback based on action keywords
         if "antidote" in text_lower or "poison" in text_lower:
             return SubPhase.WITCH_ACTION
-            return SubPhase.WITCH_ACTION
         if "protect" in text_lower:
             return SubPhase.GUARD_ACTION
         if "check" in text_lower:
@@ -139,6 +142,10 @@ class StubPlayer:
         hint: Optional[str] = None,
     ) -> str:
         """Generate appropriate response for the subphase."""
+        # Special case: Hunter Final Shot always shoots (never skips)
+        if "hunter final shot" in prompt.lower():
+            return await self._hunter_shoot_response(prompt)
+
         generators = {
             SubPhase.WEREWOLF_ACTION: self._werewolf_response,
             SubPhase.WITCH_ACTION: self._witch_response,
@@ -165,7 +172,8 @@ class StubPlayer:
             SubPhase.WITCH_ACTION: lambda r: r in ["pass"] or r.startswith(("antidote", "poison")),
             SubPhase.GUARD_ACTION: lambda r: r == "-1" or r.isdigit(),
             SubPhase.SEER_ACTION: lambda r: r.isdigit(),
-            SubPhase.CAMPAIGN: lambda r: len(r) > 10,  # Real speech
+            # Campaign: either "not running" or a real speech (>10 chars)
+            SubPhase.CAMPAIGN: lambda r: r == "not running" or len(r) > 10,
             SubPhase.OPT_OUT: lambda r: r in ["run", "opt-out", "stay"],
             SubPhase.SHERIFF_ELECTION: lambda r: r.isdigit() or r == "abstain",
             SubPhase.DEATH_RESOLUTION: lambda r: len(r) > 5,  # Real last words
@@ -234,7 +242,18 @@ class StubPlayer:
         return "0"
 
     async def _speech_response(self, prompt: str) -> str:
-        """Generate discussion/campaign speech."""
+        """Generate discussion/campaign speech.
+
+        For campaign: ~60% chance to skip (not running), aiming for ~4-5 candidates.
+        For discussion: always give a speech.
+        """
+        is_campaign = "campaign" in prompt.lower() and "sheriff" in prompt.lower()
+
+        if is_campaign:
+            # ~40% enter campaign (~5 out of 12), ~60% skip
+            if random.random() < 0.6:
+                return "not running"
+
         speeches = [
             "I don't have much to say yet. I'll be watching carefully.",
             "I'm leaning toward voting for someone suspicious, but I'm not ready to share yet.",
@@ -249,18 +268,28 @@ class StubPlayer:
 
     async def _opt_out_response(self, prompt: str) -> str:
         """Generate sheriff candidacy decision."""
-        if random.random() < 0.2:  # 20% opt-out chance
-            return "OPT-OUT"
-        return "RUN"
+        # ~30% opt-out rate (candidates can drop out after entering)
+        if random.random() < 0.3:
+            return "opt out"
+        return "stay"
 
     async def _sheriff_vote_response(self, prompt: str) -> str:
-        """Generate sheriff election vote."""
-        if random.random() < 0.05:  # 5% abstain chance
-            return "ABSTAIN"
+        """Generate sheriff election vote.
 
+        Note: Sheriff election does NOT allow abstention - player must vote.
+        Uses weighted voting to reduce ties.
+        """
         candidates = self._extract_seats(prompt, "candidates", allow_empty=True)
         if candidates:
-            return str(random.choice(candidates))
+            # Use weighted choice to reduce ties - slight bias toward lower-numbered seats
+            weights = [1.0 / (i + 1) for i in range(len(candidates))]
+            total = sum(weights)
+            weights = [w / total for w in weights]
+            return str(random.choices(candidates, weights=weights)[0])
+        # Fallback: return first available candidate seat from prompt
+        fallback_match = re.search(r'\b(\d+)\b', prompt)
+        if fallback_match:
+            return fallback_match.group(1)
         return "0"
 
     async def _last_words_response(self, prompt: str) -> str:
@@ -276,14 +305,33 @@ class StubPlayer:
         ]
         return random.choice(statements)
 
+    async def _hunter_shoot_response(self, prompt: str) -> str:
+        """Generate hunter shoot target - always shoot if possible.
+
+        Hunter should ALWAYS shoot when killed by werewolves (not poison).
+        """
+        living = self._extract_seats(prompt, "living")
+        if living:
+            # Always pick a target (hunter should never skip)
+            return str(random.choice(living))
+        # No living players to shoot
+        return "SKIP"
+
     async def _vote_response(self, prompt: str) -> str:
-        """Generate voting decision."""
+        """Generate voting decision.
+
+        Uses weighted voting to reduce ties - slight bias toward lower-numbered seats.
+        """
         if random.random() < 0.1:  # 10% abstain chance
             return "ABSTAIN"
 
         living = self._extract_seats(prompt, "living")
         if living:
-            return str(random.choice(living))
+            # Use weighted choice to reduce ties - bias toward lower-numbered seats
+            weights = [1.0 / (i + 1) for i in range(len(living))]
+            total = sum(weights)
+            weights = [w / total for w in weights]
+            return str(random.choices(living, weights=weights)[0])
         return "ABSTAIN"
 
     # ------------------------------------------------------------------

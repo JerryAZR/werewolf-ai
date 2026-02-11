@@ -35,16 +35,26 @@ uv run python main.py
 **Handler Pattern**: Each micro-phase has a handler in `src/werewolf/handlers/` that:
 1. Receives `PhaseContext` with game state
 2. Queries participants (AI or human) for decisions
-3. Returns `HandlerResult` with `SubPhaseLog` containing game events
+3. Returns `HandlerResult` with `Subphase_log` containing game events
 4. Validates actions against game rules
 
 **Handler Interface** (`src/werewolf/handlers/__init__.py`):
 - `PhaseContext`: Contains phase, day, players dict, living/dead sets, night_actions, sheriff
 - `HandlerResult`: Contains `subphase_log` (all events from this subphase)
+- All handlers are `async` and use the `Participant` Protocol
+
+**Handler Structure** (each handler file):
+- Handler class (e.g., `WerewolfHandler`, `WitchHandler`)
+- `PhaseContext` class for testing (mirrors engine-provided context)
+- `HandlerResult` and `SubPhaseLog` Pydantic models
+- `Participant` Protocol defining the `decide()` async method
+- Private methods: `_build_prompts()`, `_parse_response()`, `_validate_action()`
+- `ValidationResult` model for action validation feedback
 
 **Night Action Accumulator**: Created fresh each night by the engine. Accumulates `kill_target`, `antidote_target`, `poison_target`, `guard_target`. Engine pre-fills persistent state (`antidote_used`, `poison_used`, `guard_prev_target`) each night. Handlers receive read-only accumulator and return events; engine updates accumulator after reading events.
 
 **12-Player Configuration**: Defined in `STANDARD_12_PLAYER_CONFIG` (src/werewolf/models/player.py:81):
+
 - 4 Werewolves, 1 Seer, 1 Witch, 1 Hunter, 1 Guard, 4 Ordinary Villagers
 
 **Testing AI**: `StubPlayer` in `src/werewolf/ai/stub_ai.py` generates valid random actions for testing. Use in tests via `test_handler_stub_integration.py`.

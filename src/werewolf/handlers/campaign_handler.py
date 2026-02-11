@@ -7,13 +7,13 @@ give campaign speeches before the election.
 from typing import Protocol, Sequence, Optional
 from pydantic import BaseModel, Field
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     Speech,
     Phase,
     SubPhase,
     GameEvent,
 )
-from src.werewolf.models.player import Player, Role
+from werewolf.models.player import Player, Role
 
 
 # ============================================================================
@@ -154,7 +154,9 @@ class CampaignHandler:
                     for_seat=seat,
                     candidates=ordered_candidates,
                 )
-                events.append(speech)
+                # Skip "not running" responses
+                if speech is not None:
+                    events.append(speech)
 
         # Build debug info
         import json
@@ -281,7 +283,7 @@ CAMPAIGN INSTRUCTIONS:
         participant: Participant,
         for_seat: int,
         candidates: list[int],
-    ) -> Speech:
+    ) -> Optional[Speech]:
         """Get valid campaign speech from participant with retry.
 
         Args:
@@ -291,10 +293,10 @@ CAMPAIGN INSTRUCTIONS:
             candidates: List of all candidates (ordered)
 
         Returns:
-            Valid Speech event
+            Valid Speech event, or None if participant says "not running"
 
         Raises:
-            MaxRetriesExceededError: If max retries are exceeded
+            MaxRetriesExceededError: If max retries are exceeded without valid speech
         """
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, for_seat, candidates)
@@ -307,7 +309,7 @@ CAMPAIGN INSTRUCTIONS:
             raw = await participant.decide(system, user, hint=hint)
 
             # Validate content
-            content = raw.strip()
+            content = raw.strip().lower()
             if not content:
                 if attempt == self.max_retries - 1:
                     raise MaxRetriesExceededError(
@@ -315,14 +317,18 @@ CAMPAIGN INSTRUCTIONS:
                     )
                 hint = "Your speech was empty. Please provide a campaign speech."
                 raw = await participant.decide(system, user, hint=hint)
-                content = raw.strip()
+                content = raw.strip().lower()
 
-            if content:
+            # Check for "not running" response
+            if content == "not running":
+                return None
+
+            if raw.strip():
                 # Create speech with preview for debug
-                preview = content[:100] + "..." if len(content) > 100 else content
+                preview = raw.strip()[:100] + "..." if len(raw.strip()) > 100 else raw.strip()
                 return Speech(
                     actor=for_seat,
-                    content=content,
+                    content=raw.strip(),
                     phase=Phase.DAY,
                     micro_phase=SubPhase.CAMPAIGN,
                     day=context.day,

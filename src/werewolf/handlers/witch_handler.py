@@ -7,14 +7,14 @@ their antidote to save a werewolf target or their poison to kill a player.
 from typing import Protocol, Sequence, Optional, Any
 from pydantic import BaseModel, Field
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     WitchAction,
     WitchActionType,
     Phase,
     SubPhase,
     GameEvent,
 )
-from src.werewolf.models.player import Player, Role
+from werewolf.models.player import Player, Role
 
 
 # ============================================================================

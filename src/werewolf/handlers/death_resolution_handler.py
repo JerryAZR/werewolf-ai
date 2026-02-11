@@ -12,16 +12,16 @@ For banishment deaths, see BanishmentResolution handler.
 from typing import Optional, Sequence, Protocol, Any
 from pydantic import BaseModel, Field
 
-from src.werewolf.events.game_events import GameEvent
+from werewolf.events.game_events import GameEvent
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     DeathEvent,
     DeathCause,
     Phase,
     SubPhase,
     GameEvent,
 )
-from src.werewolf.models.player import Player, Role
+from werewolf.models.player import Player, Role
 
 
 # ============================================================================
@@ -209,7 +209,7 @@ class Participant(Protocol):
 
 
 class DeathResolutionHandler:
-    """Handler for DeathResolution subphase (night deaths only).
+    """Handler for NIGHT_RESOLUTION subphase (night deaths only).
 
     Responsibilities:
     1. Process deaths from NightOutcome (WEREWOLF_KILL or POISON)
@@ -217,6 +217,9 @@ class DeathResolutionHandler:
        - Last words (Night 1 only)
        - Hunter shoot target (if Hunter + WEREWOLF_KILL)
        - Badge transfer (if Sheriff)
+
+    Creates DeathEvents with micro_phase=NIGHT_RESOLUTION for inclusion
+    in the NIGHT_RESOLUTION subphase of the night phase.
 
     Validation Rules:
     - Hunter can ONLY shoot if killed by WEREWOLF_KILL
@@ -233,13 +236,15 @@ class DeathResolutionHandler:
         context: "PhaseContext",
         night_outcome: "NightOutcomeInput",
         participants: Optional[Sequence[tuple[int, Participant]]] = None,
+        micro_phase: SubPhase = SubPhase.NIGHT_RESOLUTION,
     ) -> HandlerResult:
-        """Execute the DeathResolution subphase for night deaths.
+        """Execute the NIGHT_RESOLUTION subphase for night deaths.
 
         Args:
             context: Game state with players, living/dead, sheriff
             night_outcome: NightOutcome with deaths dict {seat: DeathCause}
             participants: Sequence of (seat, Participant) tuples for dying players
+            micro_phase: SubPhase type for the subphase log (NIGHT_RESOLUTION or DEATH_RESOLUTION)
 
         Returns:
             HandlerResult with SubPhaseLog containing DeathEvent(s)
@@ -260,7 +265,7 @@ class DeathResolutionHandler:
         if not deaths:
             return HandlerResult(
                 subphase_log=SubPhaseLog(
-                    micro_phase=SubPhase.DEATH_RESOLUTION,
+                    micro_phase=micro_phase,
                     events=[],
                 ),
                 debug_info="No night deaths to resolve",
@@ -275,6 +280,7 @@ class DeathResolutionHandler:
                 cause=cause,
                 day=night_outcome.day,
                 participant=participant,
+                micro_phase=micro_phase,
             )
             events.append(death_event)
 
@@ -283,7 +289,7 @@ class DeathResolutionHandler:
 
         return HandlerResult(
             subphase_log=SubPhaseLog(
-                micro_phase=SubPhase.DEATH_RESOLUTION,
+                micro_phase=micro_phase,
                 events=events,
             ),
             debug_info=debug_info,
@@ -296,6 +302,7 @@ class DeathResolutionHandler:
         cause: DeathCause,
         day: int,
         participant: Optional[Participant] = None,
+        micro_phase: SubPhase = SubPhase.NIGHT_RESOLUTION,
     ) -> DeathEvent:
         """Create a DeathEvent for a single death.
 
@@ -305,6 +312,7 @@ class DeathResolutionHandler:
             cause: DeathCause (WEREWOLF_KILL or POISON)
             day: Current day number
             participant: Participant for querying AI/human decisions
+            micro_phase: SubPhase type for the death event
 
         Returns:
             DeathEvent with all associated actions resolved
@@ -344,8 +352,8 @@ class DeathResolutionHandler:
             last_words=last_words,
             hunter_shoot_target=hunter_shoot_target,
             badge_transfer_to=badge_transfer_to,
-            phase=Phase.DAY,
-            micro_phase=SubPhase.DEATH_RESOLUTION,
+            phase=Phase.NIGHT,
+            micro_phase=micro_phase,
             day=day,
         )
 
@@ -875,4 +883,4 @@ class NightOutcomeInput:
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.werewolf.handlers.werewolf_handler import PhaseContext
+    from werewolf.handlers.werewolf_handler import PhaseContext

@@ -15,19 +15,19 @@ from typing import Optional, Any
 from unittest.mock import patch
 import random
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     DeathEvent,
     DeathCause,
     Phase,
     SubPhase,
 )
-from src.werewolf.handlers.banishment_resolution_handler import (
+from werewolf.handlers.banishment_resolution_handler import (
     BanishmentResolutionHandler,
     BanishmentInput,
     SubPhaseLog,
     HandlerResult,
 )
-from src.werewolf.models.player import Player, Role
+from werewolf.models.player import Player, Role
 
 
 # ============================================================================

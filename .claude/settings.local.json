@@ -5,7 +5,11 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(python -c:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(for:*)",
+      "Bash(do)",
+      "Bash(done:*)",
+      "Bash(python:*)"
     ]
   }
 }

@@ -14,22 +14,22 @@ from typing import Any, Optional
 from collections import defaultdict
 from pydantic import BaseModel
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     Vote,
     Banishment,
     Phase,
     SubPhase,
 )
-from src.werewolf.events.event_log import (
+from werewolf.events.event_log import (
     SubPhaseLog,
 )
-from src.werewolf.handlers.voting_handler import (
+from werewolf.handlers.voting_handler import (
     VotingHandler,
     SHERIFF_VOTE_WEIGHT,
     DEFAULT_VOTE_WEIGHT,
 )
-from src.werewolf.handlers.werewolf_handler import PhaseContext
-from src.werewolf.models import (
+from werewolf.handlers.werewolf_handler import PhaseContext
+from werewolf.models import (
     Player,
     Role,
 )

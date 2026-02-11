@@ -4,12 +4,12 @@ import pytest
 import tempfile
 import os
 
-from src.werewolf.events.event_log import (
+from werewolf.events.event_log import (
     GameEventLog,
     PhaseLog,
     SubPhaseLog,
 )
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     GameStart,
     WerewolfKill,
     WitchAction,

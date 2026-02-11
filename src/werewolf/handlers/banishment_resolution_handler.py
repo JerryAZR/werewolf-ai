@@ -12,13 +12,13 @@ For night deaths, see DeathResolution handler.
 from typing import Optional, Sequence, Protocol, Any
 from pydantic import BaseModel, Field
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     DeathEvent,
     DeathCause,
     Phase,
     SubPhase,
 )
-from src.werewolf.models.player import Player, Role
+from werewolf.models.player import Player, Role
 
 
 # ============================================================================
@@ -806,4 +806,4 @@ class BanishmentInput:
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.werewolf.handlers.werewolf_handler import PhaseContext
+    from werewolf.handlers.werewolf_handler import PhaseContext

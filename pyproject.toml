@@ -12,7 +12,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23.0", "pytest-timeout"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+timeout = 60
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/werewolf"]

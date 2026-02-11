@@ -12,14 +12,14 @@ import pytest
 from typing import Optional, Any, Sequence
 from pydantic import BaseModel
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     SeerAction,
     SeerResult,
     Phase,
     SubPhase,
 )
-from src.werewolf.events.event_log import SubPhaseLog
-from src.werewolf.models.player import Player, Role
+from werewolf.events.event_log import SubPhaseLog
+from werewolf.models.player import Player, Role
 
 
 # ============================================================================

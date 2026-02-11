@@ -8,14 +8,14 @@ import json
 from typing import Protocol, Sequence, Optional
 from pydantic import BaseModel, Field
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     Speech,
     Phase,
     SubPhase,
     GameEvent,
     DeathEvent,
 )
-from src.werewolf.models.player import Player, Role
+from werewolf.models.player import Player, Role
 
 
 # ============================================================================

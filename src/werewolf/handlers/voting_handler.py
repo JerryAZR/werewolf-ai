@@ -13,7 +13,7 @@ from collections import defaultdict
 from typing import Protocol, Sequence, Optional, Any
 from pydantic import BaseModel, Field
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     Vote,
     Banishment,
     Phase,
@@ -453,4 +453,4 @@ class MaxRetriesExceededError(Exception):
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.werewolf.handlers.werewolf_handler import PhaseContext
+    from werewolf.handlers.werewolf_handler import PhaseContext

@@ -4,15 +4,15 @@ import pytest
 from typing import Optional, Any, Protocol, Sequence
 from pydantic import BaseModel
 
-from src.werewolf.events.game_events import (
+from werewolf.events.game_events import (
     WitchAction,
     WitchActionType,
     Phase,
     SubPhase,
     GameEvent,
 )
-from src.werewolf.events.event_log import SubPhaseLog
-from src.werewolf.models.player import Player, Role, PlayerType
+from werewolf.events.event_log import SubPhaseLog
+from werewolf.models.player import Player, Role, PlayerType
 
 
 # ============================================================================
