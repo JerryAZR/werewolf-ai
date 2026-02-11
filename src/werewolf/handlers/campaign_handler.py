@@ -4,7 +4,7 @@ This handler manages the Campaign subphase on Day 1 where Sheriff candidates
 give campaign speeches before the election.
 """
 
-from typing import Protocol, Sequence, Optional
+from typing import Protocol, Sequence, Optional, Any
 from pydantic import BaseModel, Field
 
 from werewolf.events.game_events import (
@@ -55,6 +55,9 @@ class Participant(Protocol):
     The handler queries participants for their decisions during subphases.
     Participants return raw strings - handlers are responsible for parsing
     and validation.
+
+    For interactive TUI play, handlers may provide a ChoiceSpec to guide
+    the participant's decision-making with structured choices.
     """
 
     async def decide(
@@ -62,6 +65,7 @@ class Participant(Protocol):
         system_prompt: str,
         user_prompt: str,
         hint: Optional[str] = None,
+        choices: Optional[Any] = None,
     ) -> str:
         """Make a decision and return raw response string.
 
@@ -69,6 +73,7 @@ class Participant(Protocol):
             system_prompt: System instructions defining the role/constraints
             user_prompt: User prompt with current game state
             hint: Optional hint for invalid previous attempts
+            choices: Optional ChoiceSpec for interactive TUI selection
 
         Returns:
             Raw response string to be parsed by the handler

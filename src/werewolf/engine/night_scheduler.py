@@ -273,9 +273,21 @@ class NightScheduler:
         participants: dict[int, Participant],
     ) -> WerewolfHandlerResult:
         """Run werewolf action subphase."""
-        return await self._werewolf_handler(
-            context, list(participants.items())
-        )
+        try:
+            return await self._werewolf_handler(
+                context, list(participants.items())
+            )
+        except MaxRetriesExceededError:
+            # If werewolves fail to decide after retries, return empty result (skip kill)
+            from werewolf.events import SubPhase
+            from werewolf.handlers.werewolf_handler import SubPhaseLog as WerewolfSubPhaseLog
+            return WerewolfHandlerResult(
+                subphase_log=WerewolfSubPhaseLog(
+                    micro_phase=SubPhase.WEREWOLF_ACTION,
+                    events=[],
+                ),
+                debug_info="Werewolves failed to decide after retries, skipping kill",
+            )
 
     async def _run_witch_action(
         self,
@@ -314,11 +326,23 @@ class NightScheduler:
         night_actions: NightActionStore,
     ) -> GuardHandlerResult:
         """Run guard action subphase."""
-        return await self._guard_handler(
-            context,
-            list(participants.items()),
-            guard_prev_target=night_actions.guard_prev_target,
-        )
+        try:
+            return await self._guard_handler(
+                context,
+                list(participants.items()),
+                guard_prev_target=night_actions.guard_prev_target,
+            )
+        except MaxRetriesExceededError:
+            # If guard fails to decide after retries, return empty result (skip)
+            from werewolf.events import SubPhase
+            from werewolf.handlers.guard_handler import SubPhaseLog as GuardSubPhaseLog
+            return GuardHandlerResult(
+                subphase_log=GuardSubPhaseLog(
+                    micro_phase=SubPhase.GUARD_ACTION,
+                    events=[],
+                ),
+                debug_info="Guard failed to decide after retries, skipping",
+            )
 
     async def _run_seer_action(
         self,
@@ -326,7 +350,19 @@ class NightScheduler:
         participants: dict[int, Participant],
     ) -> SeerHandlerResult:
         """Run seer action subphase."""
-        return await self._seer_handler(context, list(participants.items()))
+        try:
+            return await self._seer_handler(context, list(participants.items()))
+        except MaxRetriesExceededError:
+            # If seer fails to decide after retries, return empty result (skip)
+            from werewolf.events import SubPhase
+            from werewolf.handlers.seer_handler import SubPhaseLog as SeerSubPhaseLog
+            return SeerHandlerResult(
+                subphase_log=SeerSubPhaseLog(
+                    micro_phase=SubPhase.SEER_ACTION,
+                    events=[],
+                ),
+                debug_info="Seer failed to decide after retries, skipping",
+            )
 
     async def _run_death_resolution(
         self,

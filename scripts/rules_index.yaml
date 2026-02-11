@@ -14,6 +14,7 @@ categories:
       - "Villagers win when all Werewolves are dead (werewolf_count == 0)."
       - "Werewolves win when all Ordinary Villagers are dead (villager_count == 0)."
       - "Werewolves win when all Gods are dead (god_count == 0)."
+      - "If both Werewolf and Villager victory conditions are met simultaneously, the game ends in a tie."
 
   - id: B
     name: Game Initialization
@@ -114,6 +115,7 @@ categories:
       - "Badge transfer target MUST be living."
       - "Sheriff role MUST remain single (one badge at a time)."
       - "Werewolf Sheriff MUST still win with Werewolf camp."
+      - "When a Sheriff dies, they MUST be queried for badge transfer target during death resolution."
 
   - id: M
     name: State Consistency

@@ -12,7 +12,6 @@ from .validator import (
     NoOpValidator,
     CollectingValidator,
     create_validator,
-    ValidationError,
 )
 
 __all__ = [
@@ -28,5 +27,4 @@ __all__ = [
     "NoOpValidator",
     "CollectingValidator",
     "create_validator",
-    "ValidationError",
 ]

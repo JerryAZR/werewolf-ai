@@ -70,6 +70,9 @@ class DayScheduler:
         Returns:
             Tuple of (updated state, updated collector)
         """
+        # Create a copy to avoid mutating the input state
+        state = state.model_copy(deep=True)
+
         # Default to empty dict if no deaths
         if night_deaths is None:
             night_deaths = {}

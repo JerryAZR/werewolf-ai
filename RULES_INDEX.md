@@ -13,6 +13,7 @@ transfer) are NOT included here.
 - **A.2** Villagers win when all Werewolves are dead (werewolf_count == 0).
 - **A.3** Werewolves win when all Ordinary Villagers are dead (villager_count == 0).
 - **A.4** Werewolves win when all Gods are dead (god_count == 0).
+- **A.5** If both Werewolf and Villager victory conditions are met simultaneously, the game ends in a tie.
 
 ## Game Initialization
 - **B.1** Werewolf count MUST be greater than 0.
@@ -91,6 +92,7 @@ transfer) are NOT included here.
 - **L.1** Badge transfer target MUST be living.
 - **L.2** Sheriff role MUST remain single (one badge at a time).
 - **L.3** Werewolf Sheriff MUST still win with Werewolf camp.
+- **L.4** When a Sheriff dies, they MUST be queried for badge transfer target during death resolution.
 
 ## State Consistency
 - **M.1** living_players union dead_players MUST equal all_players.
@@ -116,7 +118,7 @@ transfer) are NOT included here.
 
 | Category | Rules | Enforcement Point |
 |----------|-------|-------------------|
-| Victory Conditions | 4 | on_game_over |
+| Victory Conditions | 5 | on_game_over |
 | Game Initialization | 4 | Game setup |
 | Phase Order | 15 | Scheduler flow |
 | Night Actions - Werewolf | 2 | WerewolfHandler |
@@ -127,9 +129,9 @@ transfer) are NOT included here.
 | Death Resolution | 9 | DeathResolutionHandler |
 | Voting | 2 | VotingHandler |
 | Hunter | 4 | DeathResolutionHandler |
-| Badge Transfer | 3 | DeathResolutionHandler |
+| Badge Transfer | 4 | DeathResolutionHandler |
 | State Consistency | 7 | on_event_applied |
 | Event Logging | 6 | EventCollector |
 | Role-Specific | 1 | Handlers |
 
-**Total: 74 assertions**
+**Total: 76 assertions**
