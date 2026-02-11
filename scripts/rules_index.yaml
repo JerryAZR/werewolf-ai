@@ -1,0 +1,156 @@
+# Werewolf Game Rules Assertion Index
+#
+# Canonical source for validator assertions. Edit here, then run:
+#   python scripts/regenerate_rules_index.py
+#
+# Each rule is written as an assertion with "MUST" or "CANNOT".
+# Optional player choices (e.g., Hunter activation, badge transfer) are NOT included.
+
+categories:
+  - id: A
+    name: Victory Conditions
+    rules:
+      - "Game MUST end with a winner when victory condition is met."
+      - "Villagers win when all Werewolves are dead (werewolf_count == 0)."
+      - "Werewolves win when all Ordinary Villagers are dead (villager_count == 0)."
+      - "Werewolves win when all Gods are dead (god_count == 0)."
+
+  - id: B
+    name: Phase Order
+    rules:
+      - "Game MUST start with Night 1 (Phase.NIGHT, day == 1)."
+      - "Day phases MUST follow Night phases (no consecutive Night phases)."
+      - "Sheriff election phases MUST run before DeathResolution on Day 1."
+      - "Night action order: Werewolves MUST act before Witch."
+      - "NightResolution MUST be the last night subphase."
+      - "A night phase MUST contain WerewolfAction and NightResolution subphases."
+      - "Day phases MUST follow order: Campaign -> OptOut -> Sheriff -> Death -> Discussion -> Voting."
+      - "Campaign MUST be the first phase of Day 1."
+      - "Campaign CANNOT occur on Day 2+."
+      - "OptOut MUST follow Campaign IFF (candidates exist after Campaign)."
+      - "Sheriff Election MUST follow OptOut IFF (candidates remain after OptOut)."
+      - "Death Resolution MUST precede Discussion."
+      - "Discussion MUST precede Voting."
+      - "Banishment Resolution MUST follow Voting IFF (banishment occurred, i.e., not a tie)."
+      - "Banishment Resolution CANNOT occur IFF (tie vote)."
+      - "Game MUST end after 20 days maximum (implementation safeguard)."
+
+  - id: C
+    name: Night Actions - Werewolf
+    rules:
+      - "Werewolf kill target MUST be a living player."
+      - "Werewolves MUST either kill a living player or return \"-1\" to skip."
+      - "Dead Werewolves CANNOT participate in night action."
+
+  - id: D
+    name: Night Actions - Witch
+    rules:
+      - "Witch MUST know Werewolf kill target when deciding antidote."
+      - "Witch CANNOT use more than one potion per night."
+      - "Witch CANNOT use antidote on self."
+      - "Witch CANNOT use antidote if already used (antidote_used == True)."
+      - "Witch CANNOT use poison if already used (poison_used == True)."
+      - "Antidote MUST override Werewolf kill (saved player survives)."
+      - "Poison MUST kill target regardless of guard protection."
+
+  - id: E
+    name: Night Actions - Guard
+    rules:
+      - "Guard CANNOT guard the same player on consecutive nights."
+      - "Guard MUST be allowed to guard self."
+      - "Guard protection MUST NOT apply to Witch poison."
+      - "Guard skill MUST work even if Guard dies that night."
+
+  - id: F
+    name: Night Actions - Seer
+    rules:
+      - "Seer CANNOT check more than one living player per night."
+      - "Seer result MUST be GOOD or WEREWOLF."
+
+  - id: G
+    name: Sheriff Election (Day 1 Only)
+    rules:
+      - "Sheriff election MUST occur on Day 1 only."
+      - "Sheriff election CANNOT occur on Day 2+."
+      - "All living players MUST be initial Sheriff candidates."
+      - "Night 1 deaths MUST be eligible for Sheriff (campaign, speak, vote)."
+      - "Sheriff election CANNOT allow abstention (all candidates must vote)."
+      - "Sheriff vote weight MUST be 1.5 (tie-breaking)."
+
+  - id: H
+    name: Death Resolution
+    rules:
+      - "Night deaths MUST be announced after Sheriff phases (Day 1)."
+      - "Cause of death MUST NOT be revealed."
+      - "Role and camp of dead player MUST be hidden."
+      - "Night 1 deaths MUST get last words (day == 1)."
+      - "Night 2+ deaths CANNOT get last words (day > 1)."
+      - "Banished players MUST get last words (always)."
+      - "Multiple night deaths MUST give last words in seat order."
+      - "Dead players CANNOT participate in Discussion."
+      - "Dead players CANNOT vote in Day voting."
+
+  - id: I
+    name: Voting
+    rules:
+      - "All living players MUST vote (abstain is a valid response)."
+      - "Vote target MUST be a living player."
+      - "Tie vote MUST result in no banishment."
+
+  - id: J
+    name: Hunter
+    rules:
+      - "Hunter CANNOT activate when poisoned (cause == POISON)."
+      - "Hunter target MUST be a living player."
+      - "Hunter MUST either shoot a living player or return \"SKIP\"."
+      - "Hunter shot target MUST die immediately."
+      - "Hunter shot target CANNOT activate Hunter skill (no chain)."
+
+  - id: K
+    name: Badge Transfer
+    rules:
+      - "Badge transfer target MUST be living."
+      - "Sheriff role MUST remain single (one badge at a time)."
+      - "Werewolf Sheriff MUST still win with Werewolf camp."
+
+  - id: L
+    name: State Consistency
+    rules:
+      - "living_players ∪ dead_players MUST equal all_players."
+      - "living_players ∩ dead_players MUST be empty."
+      - "Player.is_alive MUST match seat in living_players."
+      - "Player.is_sheriff MUST match sheriff state."
+      - "Dead players CANNOT appear in living-only operations."
+      - "All events MUST have valid day number."
+      - "All events MUST have valid actor (seat exists)."
+
+  - id: M
+    name: Event Logging
+    rules:
+      - "Every subphase MUST produce a SubPhaseLog."
+      - "Every phase MUST produce a PhaseLog."
+      - "GameStart event MUST be recorded."
+      - "GameOver event MUST be recorded with winner."
+      - "NightOutcome MUST record deaths."
+      - "All player actions MUST be logged as events."
+
+  - id: N
+    name: Role-Specific
+    rules:
+      - "Dead players CANNOT be queried for night or day actions."
+
+enforcement_points:
+  "Victory Conditions": "on_game_over"
+  "Phase Order": "Scheduler flow"
+  "Night Actions - Werewolf": "WerewolfHandler"
+  "Night Actions - Witch": "WitchHandler, NightActionResolver"
+  "Night Actions - Guard": "GuardHandler, NightActionResolver"
+  "Night Actions - Seer": "SeerHandler"
+  "Sheriff Election (Day 1 Only)": "SheriffElectionHandler"
+  "Death Resolution": "DeathResolutionHandler"
+  "Voting": "VotingHandler"
+  "Hunter": "DeathResolutionHandler"
+  "Badge Transfer": "DeathResolutionHandler"
+  "State Consistency": "on_event_applied"
+  "Event Logging": "EventCollector"
+  "Role-Specific": "Handlers"
