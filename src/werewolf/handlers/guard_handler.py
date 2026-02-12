@@ -17,6 +17,12 @@ from werewolf.events.game_events import (
 from werewolf.models.player import Player, Role
 
 
+def _get_choice_spec_helpers():
+    """Lazy import to avoid dependency when choices not used."""
+    from werewolf.ui.choices import make_seat_choice
+    return make_seat_choice
+
+
 # ============================================================================
 # Handler Result Types
 # ============================================================================
@@ -258,6 +264,32 @@ Enter your choice (e.g., "7" or "SKIP"):"""
 
         return system, user
 
+    def build_choice_spec(
+        self,
+        context: "PhaseContext",
+        guard_seat: int,
+        guard_prev_target: Optional[int],
+    ) -> Optional[Any]:
+        """Build ChoiceSpec for interactive TUI.
+
+        Returns ChoiceSpec with valid targets (excluding previous night's target).
+        """
+        make_seat_choice = _get_choice_spec_helpers()
+
+        # Build list of valid targets (all living except previous target)
+        if guard_prev_target is not None:
+            valid_targets = [p for p in sorted(context.living_players) if p != guard_prev_target]
+        else:
+            valid_targets = list(sorted(context.living_players))
+
+        # Guard can protect themselves, so no need to exclude own seat
+
+        return make_seat_choice(
+            prompt="Choose a player to protect:",
+            seats=valid_targets,
+            allow_none=True,  # Guard can skip
+        )
+
     async def _get_valid_action(
         self,
         context: "PhaseContext",
@@ -279,6 +311,9 @@ Enter your choice (e.g., "7" or "SKIP"):"""
         Raises:
             MaxRetriesExceededError: If max retries are exceeded
         """
+        # Build ChoiceSpec with valid targets
+        choices = self.build_choice_spec(context, guard_seat, guard_prev_target)
+
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, guard_seat, guard_prev_target)
 
@@ -287,13 +322,13 @@ Enter your choice (e.g., "7" or "SKIP"):"""
             if attempt > 0:
                 hint = "Previous response was invalid. Please enter a seat number or 'SKIP'"
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
 
             try:
                 target = self._parse_response(raw)
             except ValueError as e:
                 hint = str(e)
-                raw = await participant.decide(system, user, hint=hint)
+                raw = await participant.decide(system, user, hint=hint, choices=choices)
                 target = self._parse_response(raw)
 
             # Validate action
@@ -321,7 +356,7 @@ Enter your choice (e.g., "7" or "SKIP"):"""
                     f"Failed after {self.max_retries} attempts. Last hint: {hint}"
                 )
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
             target = self._parse_response(raw)
 
             # Validate again after retry

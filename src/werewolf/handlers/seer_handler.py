@@ -18,6 +18,12 @@ from werewolf.events.game_events import (
 from werewolf.models.player import Player, Role
 
 
+def _get_choice_spec_helpers():
+    """Lazy import to avoid dependency when choices not used."""
+    from werewolf.ui.choices import make_seat_choice
+    return make_seat_choice
+
+
 # ============================================================================
 # Handler Result Types
 # ============================================================================
@@ -265,6 +271,26 @@ Enter your choice (e.g., "7"):"""
 
         return system, user
 
+    def build_choice_spec(
+        self,
+        context: "PhaseContext",
+        seer_seat: int,
+    ) -> Optional[Any]:
+        """Build ChoiceSpec for interactive TUI.
+
+        Returns ChoiceSpec with valid targets (excluding self).
+        """
+        make_seat_choice = _get_choice_spec_helpers()
+
+        # Build list of valid targets (all living except self)
+        valid_targets = [p for p in sorted(context.living_players) if p != seer_seat]
+
+        return make_seat_choice(
+            prompt="Choose a player to check:",
+            seats=valid_targets,
+            allow_none=False,  # Seer must choose someone
+        )
+
     async def _get_valid_action(
         self,
         context: "PhaseContext",
@@ -284,6 +310,9 @@ Enter your choice (e.g., "7"):"""
         Raises:
             MaxRetriesExceededError: If max retries are exceeded
         """
+        # Build ChoiceSpec with valid targets
+        choices = self.build_choice_spec(context, seer_seat)
+
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, seer_seat)
 
@@ -292,13 +321,13 @@ Enter your choice (e.g., "7"):"""
             if attempt > 0:
                 hint = "Previous response was invalid. Please enter a seat number (you cannot skip or check yourself)."
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
 
             try:
                 target = self._parse_response(raw)
             except ValueError as e:
                 hint = str(e)
-                raw = await participant.decide(system, user, hint=hint)
+                raw = await participant.decide(system, user, hint=hint, choices=choices)
                 target = self._parse_response(raw)
 
             # Validate target
@@ -326,7 +355,7 @@ Enter your choice (e.g., "7"):"""
                     f"Failed after {self.max_retries} attempts. Last hint: {hint}"
                 )
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
             target = self._parse_response(raw)
 
             # Validate again after retry

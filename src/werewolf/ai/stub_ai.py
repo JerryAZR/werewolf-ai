@@ -99,37 +99,41 @@ class StubPlayer:
         Returns:
             A valid choice value as string
         """
+        import random as rnd
+
         # Check if it has options attribute (ChoiceSpec from werewolf.ui)
         if hasattr(choices, 'options') and choices.options:
             opts = choices.options
-            if isinstance(opts, list):
-                if len(opts) == 0:
-                    return "0"
-                # List of (label, value) tuples
-                if isinstance(opts[0], tuple) and len(opts[0]) >= 2:
+            if isinstance(opts, list) and len(opts) > 0:
+                # Check if options are ChoiceOption objects (have .value attribute)
+                if hasattr(opts[0], 'value'):
+                    # Extract values from ChoiceOption objects
+                    values = [str(opt.value) for opt in opts]
+                elif isinstance(opts[0], tuple) and len(opts[0]) >= 2:
+                    # List of (label, value) tuples
                     values = [str(v) for _, v in opts]
                 else:
                     # List of just values
                     values = [str(v) for v in opts]
-                return str(random.choice(values))
+                return str(rnd.choice(values))
 
         # Check if it's a list of tuples (label, value)
         if isinstance(choices, list) and choices:
             if isinstance(choices[0], tuple):
                 values = [str(v) for _, v in choices]
-                return str(random.choice(values))
+                return str(rnd.choice(values))
 
         # Check if it's a dict
         if isinstance(choices, dict) and choices:
             values = list(choices.values())
-            return str(random.choice(values))
+            return str(rnd.choice(values))
 
         # Fallback: try to parse as raw options
         if hasattr(choices, '__iter__') and not isinstance(choices, str):
             try:
                 values = [str(v) for v in choices]
                 if values:
-                    return str(random.choice(values))
+                    return str(rnd.choice(values))
             except (TypeError, ValueError):
                 pass
 

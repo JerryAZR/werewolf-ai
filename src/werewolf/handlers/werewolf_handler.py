@@ -18,6 +18,12 @@ from werewolf.events.game_events import (
 from werewolf.models.player import Player, Role
 
 
+def _get_choice_spec_helpers():
+    """Lazy import to avoid dependency when choices not used."""
+    from werewolf.ui.choices import make_seat_choice
+    return make_seat_choice
+
+
 # ============================================================================
 # Handler Result Types
 # ============================================================================
@@ -256,6 +262,26 @@ Enter the seat number of your target to kill (or -1 to skip):"""
 
         return system, user
 
+    def build_choice_spec(
+        self,
+        context: "PhaseContext",
+        for_seat: int,
+    ) -> Optional[Any]:
+        """Build ChoiceSpec for interactive TUI.
+
+        Returns ChoiceSpec with valid targets (living players except self).
+        """
+        make_seat_choice = _get_choice_spec_helpers()
+
+        # Build list of valid targets (all living except self)
+        valid_targets = [p for p in sorted(context.living_players) if p != for_seat]
+
+        return make_seat_choice(
+            prompt="Choose a target to kill:",
+            seats=valid_targets,
+            allow_none=True,  # Werewolf can skip
+        )
+
     async def _get_valid_target(
         self,
         context: "PhaseContext",
@@ -275,6 +301,9 @@ Enter the seat number of your target to kill (or -1 to skip):"""
         Raises:
             MaxRetriesExceededError: If max retries are exceeded
         """
+        # Build ChoiceSpec with valid targets
+        choices = self.build_choice_spec(context, for_seat)
+
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, for_seat)
 
@@ -283,13 +312,13 @@ Enter the seat number of your target to kill (or -1 to skip):"""
             if attempt > 0:
                 hint = "Previous response was invalid. Please choose a living player or -1 to skip."
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
 
             try:
                 target = self._parse_target(raw)
             except ValueError:
                 hint = "Please enter a valid seat number (0-11)."
-                raw = await participant.decide(system, user, hint=hint)
+                raw = await participant.decide(system, user, hint=hint, choices=choices)
                 target = self._parse_target(raw)
 
             # Validate target
@@ -308,7 +337,7 @@ Enter the seat number of your target to kill (or -1 to skip):"""
                 )
 
             # Retry with hint
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
             target = self._parse_target(raw)
 
             if self._is_valid_target(context, target):
