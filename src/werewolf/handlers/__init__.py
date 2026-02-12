@@ -10,7 +10,7 @@ from .werewolf_handler import (
 from .campaign_handler import (
     CampaignHandler,
     PhaseContext as CampaignPhaseContext,
-    CAMPAIGN_NOT_RUNNING,
+    CAMPAIGN_OPT_OUT,
 )
 from .death_resolution_handler import (
     DeathResolutionHandler,
@@ -31,7 +31,7 @@ __all__ = [
     "WerewolfHandler",
     "CampaignHandler",
     "CampaignPhaseContext",
-    "CAMPAIGN_NOT_RUNNING",
+    "CAMPAIGN_OPT_OUT",
     "DeathResolutionHandler",
     "DeathResolutionHandlerResult",
     "DeathResolutionSubPhaseLog",

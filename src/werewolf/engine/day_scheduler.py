@@ -32,7 +32,7 @@ class Participant(Protocol):
 
 
 class DayScheduler:
-    """Orchestrates the day phase: Campaign -> OptOut -> SheriffElection -> DeathResolution -> Discussion -> Voting -> VictoryCheck"""
+    """Orchestrates the day phase: Nomination -> Campaign -> OptOut -> SheriffElection -> DeathResolution -> Discussion -> Voting -> VictoryCheck"""
 
     def __init__(self, validator: Optional["GameValidator"] = None):
         """Initialize the DayScheduler.
@@ -53,13 +53,14 @@ class DayScheduler:
         """Run complete day phase.
 
         Day order:
-        1. CampaignHandler (candidates speak) - Day 1 only
-        2. OptOutHandler (candidates may drop out) - Day 1 only
-        3. SheriffElectionHandler (vote for sheriff) - Day 1 only
-        4. DeathResolutionHandler (night deaths, last words)
-        5. DiscussionHandler (living players speak)
-        6. VotingHandler (banishment vote)
-        7. Victory check
+        1. NominationHandler (all players decide to run) - Day 1 only
+        2. CampaignHandler (candidates give speeches) - Day 1 only
+        3. OptOutHandler (candidates may drop out) - Day 1 only
+        4. SheriffElectionHandler (vote for sheriff) - Day 1 only
+        5. DeathResolutionHandler (night deaths, last words)
+        6. DiscussionHandler (living players speak)
+        7. VotingHandler (banishment vote)
+        8. Victory check
 
         Args:
             state: Current game state
@@ -90,72 +91,108 @@ class DayScheduler:
 
         # Run Day 1 special phases
         if state.day == 1:
-            # Campaign - all living players are candidates
+            # Nomination - all players decide if they want to run for Sheriff
 
-            # Hook: subphase start - Campaign
+            # Hook: subphase start - Nomination
             if self._validator:
-                await self._validator.on_subphase_start(SubPhase.CAMPAIGN, state.day, state)
+                await self._validator.on_subphase_start(SubPhase.NOMINATION, state.day, state)
 
-            sheriff_candidates = sorted(state.living_players)
-            campaign_result = await self._run_campaign(
+            nomination_result = await self._run_nomination(
                 state=state,
                 participants=all_participants,
-                sheriff_candidates=sheriff_candidates,
             )
-            collector.add_subphase_log(campaign_result.subphase_log)
-            state.apply_events(campaign_result.subphase_log.events)
+            collector.add_subphase_log(nomination_result.subphase_log)
+            state.apply_events(nomination_result.subphase_log.events)
 
-            # Hook: subphase end - Campaign
+            # Hook: subphase end - Nomination
             if self._validator:
                 await self._validator.on_subphase_end(
-                    SubPhase.CAMPAIGN, state.day, Phase.DAY, state, collector
+                    SubPhase.NOMINATION, state.day, Phase.DAY, state, collector
                 )
 
-            # OptOut - candidates decide whether to stay in race
+            # Get candidates who nominated to run
+            sheriff_candidates = self._get_nominated_seats(nomination_result.subphase_log.events)
 
-            # Hook: subphase start - OptOut
-            if self._validator:
-                await self._validator.on_subphase_start(SubPhase.OPT_OUT, state.day, state)
+            # If no one nominated, skip remaining sheriff phases
+            if not sheriff_candidates:
+                # No sheriff election occurs
+                pass
+            else:
+                # Campaign - nominated candidates give speeches
 
-            opt_out_result = await self._run_opt_out(
-                state=state,
-                participants=all_participants,
-                sheriff_candidates=sheriff_candidates,
-            )
-            collector.add_subphase_log(opt_out_result.subphase_log)
-            state.apply_events(opt_out_result.subphase_log.events)
+                # Hook: subphase start - Campaign
+                if self._validator:
+                    await self._validator.on_subphase_start(SubPhase.CAMPAIGN, state.day, state)
 
-            # Hook: subphase end - OptOut
-            if self._validator:
-                await self._validator.on_subphase_end(
-                    SubPhase.OPT_OUT, state.day, Phase.DAY, state, collector
+                campaign_result = await self._run_campaign(
+                    state=state,
+                    participants=all_participants,
+                    sheriff_candidates=sheriff_candidates,
                 )
+                collector.add_subphase_log(campaign_result.subphase_log)
+                state.apply_events(campaign_result.subphase_log.events)
 
-            # Determine remaining candidates after opt-outs
-            remaining_candidates = [
-                seat for seat in sheriff_candidates
-                if seat not in self._get_opted_out_seats(opt_out_result.subphase_log.events)
-            ]
+                # Hook: subphase end - Campaign
+                if self._validator:
+                    await self._validator.on_subphase_end(
+                        SubPhase.CAMPAIGN, state.day, Phase.DAY, state, collector
+                    )
 
-            # SheriffElection - vote for sheriff
+                # Determine remaining candidates after speeches (those who gave speeches)
+                candidates_after_speech = [
+                    seat for seat in sheriff_candidates
+                    if seat in [e.actor for e in campaign_result.subphase_log.events]
+                ]
 
-            # Hook: subphase start - SheriffElection
-            if self._validator:
-                await self._validator.on_subphase_start(SubPhase.SHERIFF_ELECTION, state.day, state)
+                # If no candidates remain after speech phase, skip opt-out and election
+                if not candidates_after_speech:
+                    sheriff_candidates = []
+                else:
+                    # OptOut - candidates decide whether to stay in race
 
-            sheriff_result = await self._run_sheriff_election(
-                state=state,
-                participants=all_participants,
-                sheriff_candidates=remaining_candidates,
-            )
-            collector.add_subphase_log(sheriff_result.subphase_log)
-            state.apply_events(sheriff_result.subphase_log.events)
+                    # Hook: subphase start - OptOut
+                    if self._validator:
+                        await self._validator.on_subphase_start(SubPhase.OPT_OUT, state.day, state)
 
-            # Hook: subphase end - SheriffElection
-            if self._validator:
-                await self._validator.on_subphase_end(
-                    SubPhase.SHERIFF_ELECTION, state.day, Phase.DAY, state, collector
-                )
+                    opt_out_result = await self._run_opt_out(
+                        state=state,
+                        participants=all_participants,
+                        sheriff_candidates=candidates_after_speech,
+                    )
+                    collector.add_subphase_log(opt_out_result.subphase_log)
+                    state.apply_events(opt_out_result.subphase_log.events)
+
+                    # Hook: subphase end - OptOut
+                    if self._validator:
+                        await self._validator.on_subphase_end(
+                            SubPhase.OPT_OUT, state.day, Phase.DAY, state, collector
+                        )
+
+                    # Determine remaining candidates after opt-outs
+                    sheriff_candidates = [
+                        seat for seat in candidates_after_speech
+                        if seat not in self._get_opted_out_seats(opt_out_result.subphase_log.events)
+                    ]
+
+                # SheriffElection - vote for sheriff (only if candidates remain)
+                if sheriff_candidates:
+                    # Hook: subphase start - SheriffElection
+                    if self._validator:
+                        await self._validator.on_subphase_start(SubPhase.SHERIFF_ELECTION, state.day, state)
+
+                    sheriff_result = await self._run_sheriff_election(
+                        state=state,
+                        participants=all_participants,
+                        sheriff_candidates=sheriff_candidates,
+                    )
+                    collector.add_subphase_log(sheriff_result.subphase_log)
+                    state.apply_events(sheriff_result.subphase_log.events)
+
+                    # Hook: subphase end - SheriffElection
+                    if self._validator:
+                        await self._validator.on_subphase_end(
+                            SubPhase.SHERIFF_ELECTION, state.day, Phase.DAY, state, collector
+                        )
 
         # DeathResolution - process night deaths (from NightOutcome)
 
@@ -260,6 +297,17 @@ class DayScheduler:
             await self._validator.on_phase_end(Phase.DAY, state.day, state, collector)
 
         return state, collector
+
+    async def _run_nomination(
+        self,
+        state: GameState,
+        participants: Sequence[tuple[int, Participant]],
+    ) -> "HandlerResult":
+        """Run Nomination subphase."""
+        from werewolf.handlers.nomination_handler import NominationHandler, HandlerResult
+        handler = NominationHandler()
+        context = self._build_context(state)
+        return await handler(context, participants)
 
     def _build_context(self, state: GameState) -> "DayPhaseContext":
         """Build DayPhaseContext from GameState."""
@@ -369,6 +417,11 @@ class DayScheduler:
         """Get seats that opted out from events."""
         from werewolf.events.game_events import SheriffOptOut
         return [e.actor for e in events if isinstance(e, SheriffOptOut)]
+
+    def _get_nominated_seats(self, events: list[GameEvent]) -> list[int]:
+        """Get seats that nominated to run from nomination events."""
+        from werewolf.events.game_events import SheriffNomination
+        return [e.actor for e in events if isinstance(e, SheriffNomination) and e.running]
 
     async def _run_banishment_resolution(
         self,

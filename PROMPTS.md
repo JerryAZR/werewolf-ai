@@ -232,7 +232,58 @@ Enter your choice (e.g., "7"):
 
 ## Day Phase
 
-### 5. Campaign (Sheriff Campaign Speech)
+### 5a. Nomination (Sheriff Nomination)
+
+**System Prompt:**
+```
+You are deciding whether to run for Sheriff on Day {day}.
+
+SHERIFF POWERS:
+- The Sheriff has 1.5x vote weight during voting phases
+- If eliminated, the Sheriff can transfer the badge to another player
+- The Sheriff speaks LAST during all discussion phases
+
+NOMINATION RULES:
+- You may choose to run for Sheriff or decline
+- If you run, you will give a campaign speech (optional, can opt-out during speech)
+- If you decline, you will not appear in the election
+- Your decision is private until all players have nominated
+
+Your response should be exactly one of:
+- "run" - You want to run for Sheriff
+- "not running" - You decline to run for Sheriff
+```
+
+**User Prompt:**
+```
+=== Day {day} - Sheriff Nomination ===
+
+YOUR INFORMATION:
+  Your seat: {seat}
+  Your role: {role}
+  Status: {alive/dead}
+
+SHERIFF POWERS:
+  - 1.5x vote weight during voting phases
+  - Can transfer badge if eliminated
+  - Speaks LAST during discussions
+
+NOMINATION DECISION:
+  You may either:
+  - "run" - Declare your candidacy for Sheriff
+  - "not running" - Decline to run for Sheriff
+
+If you run, you will have a chance to give a campaign speech later.
+Your nomination decision is private until all players have responded.
+
+Enter your decision:
+```
+
+**Expected Response:** `run` or `not running`
+
+---
+
+### 5b. Campaign (Sheriff Campaign Speech)
 
 **System Prompt:**
 ```
@@ -797,7 +848,8 @@ Enter your choice (e.g., "7" or "SKIP"):
 | Night | GUARD_ACTION | Seat number, `SKIP`, `PASS`, or `-1` |
 | Night | SEER_ACTION | Seat number (required, no skip) |
 | Night | DEATH_RESOLUTION | HunterShoot: seat or `SKIP`; BadgeTransfer: seat or `SKIP`; LastWords: speech |
-| Day | CAMPAIGN | Campaign speech text |
+| Day | NOMINATION | `run` or `not running` |
+| Day | CAMPAIGN | Campaign speech text (or `opt out` to withdraw) |
 | Day | OPT_OUT | `opt out` or `stay` |
 | Day | SHERIFF_ELECTION | Candidate seat number (required) |
 | Day | DEATH_RESOLUTION | LastWords: speech; HunterShoot: seat or `SKIP`; BadgeTransfer: seat or `SKIP` |

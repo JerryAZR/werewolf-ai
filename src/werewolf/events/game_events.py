@@ -25,6 +25,7 @@ class SubPhase(str, Enum):
     NIGHT_RESOLUTION = "NIGHT_RESOLUTION"
 
     # Day micro-phases
+    NOMINATION = "NOMINATION"
     CAMPAIGN = "CAMPAIGN"
     OPT_OUT = "OPT_OUT"
     SHERIFF_ELECTION = "SHERIFF_ELECTION"
@@ -151,6 +152,18 @@ class SheriffOptOut(CharacterAction):
 
     def __str__(self) -> str:
         return f"SheriffOptOut(actor={self.actor})"
+
+
+class SheriffNomination(CharacterAction):
+    """Player decides to run for Sheriff or not during nomination phase."""
+
+    phase: Phase = Phase.DAY
+    micro_phase: SubPhase = SubPhase.NOMINATION
+    running: bool  # True = running, False = not running
+
+    def __str__(self) -> str:
+        action = "running" if self.running else "not running"
+        return f"SheriffNomination(actor={self.actor}, {action})"
 
 
 class Vote(TargetAction):

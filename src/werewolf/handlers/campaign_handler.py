@@ -22,7 +22,7 @@ from werewolf.models.player import Player, Role
 
 # Valid responses for campaign phase
 CAMPAIGN_SPEECH = "speech"  # Valid campaign speech (non-empty)
-CAMPAIGN_NOT_RUNNING = "not running"  # Candidate declines to run
+CAMPAIGN_OPT_OUT = "opt out"  # Candidate opts out after nomination
 
 
 # ============================================================================
@@ -91,10 +91,10 @@ class CampaignHandler:
 
     Responsibilities:
     1. Validate that day == 1 (Campaign only occurs on Day 1)
-    2. Filter living Sheriff candidates from participants
+    2. Query only nominated candidates for campaign speeches
     3. Build filtered context (role visible to self, not others)
-    4. Query each candidate for their campaign speech
-    5. Validate content is non-empty
+    4. Query each candidate for their campaign speech OR opt-out
+    5. Validate content is non-empty or opt-out
     6. Order speeches with Sheriff speaking LAST if incumbent running
     7. Return HandlerResult with SubPhaseLog containing Speech events
 
@@ -150,6 +150,9 @@ class CampaignHandler:
                 subphase_log=SubPhaseLog(micro_phase=SubPhase.CAMPAIGN),
                 debug_info="No living Sheriff candidates",
             )
+
+        # Get opted-out seats from sheriff_candidates (candidates who opted out during nomination)
+        opted_out_seats = set(sheriff_candidates) - set(living_candidates)
 
         # Build participant lookup
         participant_dict = dict(participants)
@@ -255,10 +258,10 @@ SHERIFF POWERS:
 CAMPAIGN RESPONSE PROTOCOL:
 You have two choices:
 1. Give a campaign speech (any non-empty text)
-2. Say "not running" to decline from running for Sheriff
+2. Say "opt out" to withdraw from the race (you already nominated)
 
 If you give a speech, it will be visible to all players.
-If you say "not running", you will not appear in the election.
+If you say "opt out", you will not appear in the election.
 
 Your response should be your campaign speech as a single string.
 Make it compelling and appropriate for a social deduction game."""
@@ -269,7 +272,7 @@ Make it compelling and appropriate for a social deduction game."""
 YOUR INFORMATION:
   Your seat: {for_seat}
   Your role: {role_name}
-  You are running for Sheriff!
+  You nominated to run for Sheriff!
 
 SHERIFF CANDIDATES (seats): {other_candidates_str if other_candidates else 'None - you are alone!'}
 
@@ -279,7 +282,7 @@ SPEAKING ORDER:
 CAMPAIGN RESPONSE:
   You may either:
   - Give a campaign speech (type your speech)
-  - Decline to run (type: "not running")
+  - Withdraw from the race (type: "opt out")
 
   Your speech should convince others to vote for you as Sheriff.
 
@@ -297,7 +300,7 @@ CAMPAIGN RESPONSE:
         """Get valid campaign speech from participant with retry.
 
         Campaign Response Protocol:
-        - "not running" (case-insensitive): Candidate declines to run, returns None
+        - "opt out" (case-insensitive): Candidate opts out after nomination
         - Any non-empty text: Valid campaign speech, returns Speech event
 
         Args:
@@ -307,7 +310,7 @@ CAMPAIGN RESPONSE:
             candidates: List of all candidates (ordered)
 
         Returns:
-            Speech event, or None if participant says "not running"
+            Speech event, or None if participant says "opt out"
 
         Raises:
             MaxRetriesExceededError: If max retries are exceeded without valid input
@@ -318,7 +321,7 @@ CAMPAIGN RESPONSE:
             # Add hint for retry attempts
             hint = None
             if attempt > 0:
-                hint = "Your speech was empty. Please provide a campaign speech."
+                hint = "Your speech was empty. Please provide a campaign speech or 'opt out'."
 
             raw = await participant.decide(system, user, hint=hint)
 
@@ -329,12 +332,12 @@ CAMPAIGN RESPONSE:
                     raise MaxRetriesExceededError(
                         f"Failed after {self.max_retries} attempts. Speech was empty."
                     )
-                hint = "Your speech was empty. Please provide a campaign speech."
+                hint = "Your speech was empty. Please provide a campaign speech or 'opt out'."
                 raw = await participant.decide(system, user, hint=hint)
                 content = raw.strip().lower()
 
-            # Check for NOT_RUNNING response
-            if content == CAMPAIGN_NOT_RUNNING:
+            # Check for OPT_OUT response
+            if content == CAMPAIGN_OPT_OUT:
                 return None
 
             if raw.strip():

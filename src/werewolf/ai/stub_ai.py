@@ -18,7 +18,7 @@ from werewolf.events.game_events import (
     Phase,
     SubPhase,
 )
-from werewolf.handlers.campaign_handler import CAMPAIGN_NOT_RUNNING
+from werewolf.handlers.campaign_handler import CAMPAIGN_OPT_OUT
 from werewolf.models.player import Role
 
 
