@@ -9,6 +9,7 @@ for:
 For banishment deaths, see BanishmentResolution handler.
 """
 
+import random
 from typing import Optional, Sequence, Protocol, Any
 from pydantic import BaseModel, Field
 
@@ -659,7 +660,6 @@ class DeathResolutionHandler:
             return min(werewolf_candidates)
 
         # No obvious werewolves - 50% chance to skip
-        import random
         if random.random() < 0.5:
             return None
 

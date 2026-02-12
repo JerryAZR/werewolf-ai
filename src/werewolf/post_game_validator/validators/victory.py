@@ -53,6 +53,9 @@ def validate_victory(
                 "message": "Villagers win when all Werewolves are dead, but game is not over",
                 "severity": "error",
             })
+        elif declared_winner is None:
+            # This is a tie (A.5), not a violation of A.2
+            pass
         elif declared_winner != "VILLAGER":
             violations.append({
                 "rule_id": "A.2",
@@ -70,6 +73,9 @@ def validate_victory(
                 "message": "Werewolves win when all Ordinary Villagers are dead, but game is not over",
                 "severity": "error",
             })
+        elif declared_winner is None:
+            # This is a tie (A.5), not a violation of A.3
+            pass
         elif declared_winner != "WEREWOLF":
             violations.append({
                 "rule_id": "A.3",
@@ -87,6 +93,9 @@ def validate_victory(
                 "message": "Werewolves win when all Gods are dead, but game is not over",
                 "severity": "error",
             })
+        elif declared_winner is None:
+            # This is a tie (A.5), not a violation of A.4
+            pass
         elif declared_winner != "WEREWOLF":
             violations.append({
                 "rule_id": "A.4",

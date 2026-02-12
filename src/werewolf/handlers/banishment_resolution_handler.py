@@ -9,6 +9,7 @@ for the banished player with:
 For night deaths, see DeathResolution handler.
 """
 
+import random
 from typing import Optional, Sequence, Protocol, Any
 from pydantic import BaseModel, Field
 
@@ -612,7 +613,6 @@ class BanishmentResolutionHandler:
 
         # No obvious werewolves - skip or pick random
         # On banishment, hunter is more likely to shoot (revenge motive)
-        import random
         if random.random() < 0.3:
             return None
 

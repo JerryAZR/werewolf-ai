@@ -204,6 +204,9 @@ class PostGameValidator:
                 elif isinstance(event, DeathEvent):
                     self._validate_death_event(event)
                     deaths_this_day[event.actor] = event.cause.value if hasattr(event.cause, 'value') else event.cause
+                    # Also apply hunter shoot target death (if any)
+                    if event.hunter_shoot_target is not None:
+                        deaths_this_day[event.hunter_shoot_target] = "HUNTER_SHOOT"
 
                 # Vote
                 elif isinstance(event, Vote):
@@ -494,6 +497,9 @@ class PostGameValidator:
                     "A.2", "Victory Conditions",
                     "Villagers win when all Werewolves are dead, but game is not over"
                 )
+            elif declared_winner is None:
+                # This is a tie (A.5), not a violation of A.2
+                pass
             elif declared_winner != "VILLAGER":
                 self._add_violation(
                     "A.2", "Victory Conditions",
@@ -507,6 +513,9 @@ class PostGameValidator:
                     "A.3", "Victory Conditions",
                     "Werewolves win when all Ordinary Villagers are dead, but game is not over"
                 )
+            elif declared_winner is None:
+                # This is a tie (A.5), not a violation of A.3
+                pass
             elif declared_winner != "WEREWOLF":
                 self._add_violation(
                     "A.3", "Victory Conditions",
@@ -520,6 +529,9 @@ class PostGameValidator:
                     "A.4", "Victory Conditions",
                     "Werewolves win when all Gods are dead, but game is not over"
                 )
+            elif declared_winner is None:
+                # This is a tie (A.5), not a violation of A.4
+                pass
             elif declared_winner != "WEREWOLF":
                 self._add_violation(
                     "A.4", "Victory Conditions",

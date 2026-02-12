@@ -494,7 +494,7 @@ class TestStressTest:
         # Winner distribution
         winner_counts = Counter(winners)
         print(f"\nWinner Distribution:")
-        for winner, count in sorted(winner_counts.items()):
+        for winner, count in sorted(winner_counts.items(), key=lambda x: (x[0] is None, x[0])):
             pct = (count / num_games) * 100
             print(f"  {winner}: {count} ({pct:.1f}%)")
 
@@ -577,7 +577,8 @@ class TestStressTestSmall:
 
         # Quick assertions - note: small sample may not have both winners
         assert len(winners) == num_games
-        assert all(w in ["WEREWOLF", "VILLAGER"] for w in winners)
+        # Winner can be None for ties (A.5)
+        assert all(w in ["WEREWOLF", "VILLAGER", None] for w in winners)
 
         if in_game_violations:
             rule_ids = [v.rule_id for v in in_game_violations]

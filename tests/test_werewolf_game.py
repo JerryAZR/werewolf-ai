@@ -247,8 +247,8 @@ class TestWerewolfGameVictoryDetection:
 
         event_log, winner = await game.run()
 
-        assert winner is not None
         assert event_log.game_over is not None
+        # Winner can be None for ties (A.5)
         assert winner == event_log.game_over.winner
 
 

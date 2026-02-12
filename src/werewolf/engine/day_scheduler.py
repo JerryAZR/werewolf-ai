@@ -449,7 +449,7 @@ class DayScheduler:
                 return event.banished
         return None
 
-    def _finalize_game(self, collector: EventCollector, winner: str) -> None:
+    def _finalize_game(self, collector: EventCollector, winner: Optional[str]) -> None:
         """Finalize game with winner."""
         from werewolf.events.game_events import GameOver, VictoryCondition
         from werewolf.engine import GameState
@@ -458,8 +458,11 @@ class DayScheduler:
         # This is a simplified version - a full implementation would track the condition
         if winner == "WEREWOLF":
             condition = VictoryCondition.ALL_GODS_KILLED
-        else:
+        elif winner == "VILLAGER":
             condition = VictoryCondition.ALL_WEREWOLVES_KILLED
+        else:
+            # Tie - both victory conditions were met
+            condition = VictoryCondition.TIE
 
         game_over = GameOver(
             winner=winner,

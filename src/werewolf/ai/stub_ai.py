@@ -55,8 +55,8 @@ class StubPlayer:
 
     def __init__(self, seed: Optional[int] = None):
         """Initialize stub player with optional random seed."""
-        if seed is not None:
-            random.seed(seed)
+        # Use a local random instance to avoid affecting global state
+        self._rng = random.Random(seed) if seed is not None else random.Random()
         # Track state across calls for more realistic behavior
         self._last_response: Optional[str] = None
 
@@ -99,8 +99,6 @@ class StubPlayer:
         Returns:
             A valid choice value as string
         """
-        import random as rnd
-
         # Check if it has options attribute (ChoiceSpec from werewolf.ui)
         if hasattr(choices, 'options') and choices.options:
             opts = choices.options
@@ -115,25 +113,25 @@ class StubPlayer:
                 else:
                     # List of just values
                     values = [str(v) for v in opts]
-                return str(rnd.choice(values))
+                return str(self._rng.choice(values))
 
         # Check if it's a list of tuples (label, value)
         if isinstance(choices, list) and choices:
             if isinstance(choices[0], tuple):
                 values = [str(v) for _, v in choices]
-                return str(rnd.choice(values))
+                return str(self._rng.choice(values))
 
         # Check if it's a dict
         if isinstance(choices, dict) and choices:
             values = list(choices.values())
-            return str(rnd.choice(values))
+            return str(self._rng.choice(values))
 
         # Fallback: try to parse as raw options
         if hasattr(choices, '__iter__') and not isinstance(choices, str):
             try:
                 values = [str(v) for v in choices]
                 if values:
-                    return str(rnd.choice(values))
+                    return str(self._rng.choice(values))
             except (TypeError, ValueError):
                 pass
 
@@ -266,12 +264,12 @@ class StubPlayer:
 
     async def _werewolf_response(self, prompt: str) -> str:
         """Generate werewolf kill decision."""
-        if random.random() < 0.1:  # 10% skip chance
+        if self._rng.random() < 0.1:  # 10% skip chance
             return "-1"
 
         living = self._extract_seats(prompt, "living", allow_empty=True)
         if living:
-            return str(random.choice(living))
+            return str(self._rng.choice(living))
         return "0"
 
     async def _witch_response(self, prompt: str) -> str:
@@ -285,7 +283,7 @@ class StubPlayer:
         # Extract werewolf target if antidote is an option
         kill_target = self._extract_single_seat(prompt, "werewolf kill target")
 
-        roll = random.random()
+        roll = self._rng.random()
         antidote_chance = 0.3 if antidote_available else 0
         poison_chance = 0.3 if poison_available else 0
 
@@ -295,25 +293,25 @@ class StubPlayer:
         if poison_available and antidote_chance <= roll < antidote_chance + poison_chance:
             living = self._extract_seats(prompt, "living")
             if living:
-                return f"POISON {random.choice(living)}"
+                return f"POISON {self._rng.choice(living)}"
 
         return "PASS"
 
     async def _guard_response(self, prompt: str) -> str:
         """Generate guard protection target."""
-        if random.random() < 0.1:  # 10% skip chance
+        if self._rng.random() < 0.1:  # 10% skip chance
             return "-1"
 
         living = self._extract_seats(prompt, "living")
         if living:
-            return str(random.choice(living))
+            return str(self._rng.choice(living))
         return "-1"
 
     async def _seer_response(self, prompt: str) -> str:
         """Generate seer check target."""
         living = self._extract_seats(prompt, "living")
         if living:
-            return str(random.choice(living))
+            return str(self._rng.choice(living))
         return "0"
 
     async def _speech_response(self, prompt: str) -> str:
@@ -326,7 +324,7 @@ class StubPlayer:
 
         if is_campaign:
             # ~40% enter campaign (~5 out of 12), ~60% skip
-            if random.random() < 0.6:
+            if self._rng.random() < 0.6:
                 return CAMPAIGN_NOT_RUNNING
 
         speeches = [
@@ -339,7 +337,7 @@ class StubPlayer:
             "I'll share my thoughts after hearing from more players.",
             "Something feels off about the early discussion.",
         ]
-        return random.choice(speeches)
+        return self._rng.choice(speeches)
 
     async def _nomination_response(self, prompt: str) -> str:
         """Generate sheriff nomination decision.
@@ -347,14 +345,14 @@ class StubPlayer:
         Returns "run" or "not running" based on random chance.
         """
         # ~40% chance to run for sheriff
-        if random.random() < 0.4:
+        if self._rng.random() < 0.4:
             return "run"
         return "not running"
 
     async def _opt_out_response(self, prompt: str) -> str:
         """Generate sheriff candidacy decision."""
         # ~30% opt-out rate (candidates can drop out after entering)
-        if random.random() < 0.3:
+        if self._rng.random() < 0.3:
             return "opt out"
         return "stay"
 
@@ -370,7 +368,7 @@ class StubPlayer:
             weights = [1.0 / (i + 1) for i in range(len(candidates))]
             total = sum(weights)
             weights = [w / total for w in weights]
-            return str(random.choices(candidates, weights=weights)[0])
+            return str(self._rng.choices(candidates, weights=weights)[0])
         # Fallback: return first available candidate seat from prompt
         fallback_match = re.search(r'\b(\d+)\b', prompt)
         if fallback_match:
@@ -388,7 +386,7 @@ class StubPlayer:
             "I regret not speaking up more earlier. Stay vigilant.",
             "This is a tough game. Trust your instincts.",
         ]
-        return random.choice(statements)
+        return self._rng.choice(statements)
 
     async def _hunter_shoot_response(self, prompt: str) -> str:
         """Generate hunter shoot target - always shoot if possible.
@@ -398,7 +396,7 @@ class StubPlayer:
         living = self._extract_seats(prompt, "living")
         if living:
             # Always pick a target (hunter should never skip)
-            return str(random.choice(living))
+            return str(self._rng.choice(living))
         # No living players to shoot
         return "SKIP"
 
@@ -407,7 +405,7 @@ class StubPlayer:
 
         Uses weighted voting to reduce ties - slight bias toward lower-numbered seats.
         """
-        if random.random() < 0.1:  # 10% abstain chance
+        if self._rng.random() < 0.1:  # 10% abstain chance
             return "ABSTAIN"
 
         living = self._extract_seats(prompt, "living")
@@ -416,7 +414,7 @@ class StubPlayer:
             weights = [1.0 / (i + 1) for i in range(len(living))]
             total = sum(weights)
             weights = [w / total for w in weights]
-            return str(random.choices(living, weights=weights)[0])
+            return str(self._rng.choices(living, weights=weights)[0])
         return "ABSTAIN"
 
     # ------------------------------------------------------------------

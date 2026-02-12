@@ -78,9 +78,12 @@ def validate_a2_villagers_win_when_werewolves_dead(
     villagers_dead = villager_count == 0
     gods_dead = god_count == 0
 
-    # Villager victory condition: all werewolves dead
-    # But NOT tie (both werewolves dead AND villagers/gods dead)
-    villager_victory_condition = werewolves_dead and not (villagers_dead and gods_dead)
+    # A.5: Tie when both victory conditions are met simultaneously
+    # This happens when werewolves are dead AND (villagers are dead OR gods are dead)
+    is_tie_condition = werewolves_dead and (villagers_dead or gods_dead)
+
+    # Villager victory condition: all werewolves dead (but NOT tie)
+    villager_victory_condition = werewolves_dead and not is_tie_condition
 
     if villager_victory_condition:
         if not is_over:
@@ -220,9 +223,11 @@ def validate_a5_tie_when_both_conditions_met(
     villagers_dead = villager_count == 0
     gods_dead = god_count == 0
 
-    # Tie condition: both werewolves dead AND (villagers dead OR gods dead)
-    # Actually per rules: werewolves dead AND villagers dead AND gods dead
-    tie_condition = werewolves_dead and villagers_dead and gods_dead
+    # A.5: Tie when BOTH victory conditions are met simultaneously:
+    # - Villager condition: all werewolves dead
+    # - Werewolf condition: all villagers dead OR all gods dead
+    # Tie = werewolves_dead AND (villagers_dead OR gods_dead)
+    tie_condition = werewolves_dead and (villagers_dead or gods_dead)
 
     if tie_condition:
         if not is_over:

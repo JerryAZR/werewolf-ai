@@ -1,6 +1,5 @@
 """WerewolfGame - main game controller that orchestrates the complete game loop."""
 
-import random
 from typing import Optional, Protocol, TYPE_CHECKING
 
 from werewolf.engine import (
@@ -109,11 +108,6 @@ class WerewolfGame:
         if self._validator:
             await self._validator.on_game_start(self._state, self._collector)
 
-        # Seed random if a seed is provided for reproducible games
-        if self._seed is not None:
-            random.seed(self._seed)
-
-        # Main game loop
         winner: Optional[str] = None
         current_day = 1
         night_deaths: dict[int, DeathCause] = {}  # Deaths from previous night
@@ -159,13 +153,24 @@ class WerewolfGame:
                 god_count = self._state.get_god_count()
                 villager_count = self._state.get_ordinary_villager_count()
 
-                if werewolf_count == 0:
-                    winner = "VILLAGER"
-                elif god_count == 0 or villager_count == 0:
+                werewolves_alive = werewolf_count > 0
+                villagers_alive = villager_count > 0
+                gods_alive = god_count > 0
+
+                # Check for tie (both victory conditions met)
+                villagers_win = not werewolves_alive
+                werewolves_win = werewolves_alive and (not gods_alive or not villagers_alive)
+
+                if villagers_win and werewolves_win:
+                    # Tie - both conditions met
+                    winner = None
+                elif werewolves_alive and (not gods_alive or not villagers_alive):
                     winner = "WEREWOLF"
-                else:
-                    # Still tied after max days - villagers win by default
+                elif not werewolves_alive:
                     winner = "VILLAGER"
+                else:
+                    # Still tied after max days - use tie
+                    winner = None
 
         # Create GameOver event
         game_over = self._create_game_over(winner)
@@ -190,13 +195,17 @@ class WerewolfGame:
         condition = self._determine_victory_condition(winner)
 
         return GameOver(
-            winner=winner if winner else "UNKNOWN",
+            winner=winner,
             condition=condition,
             final_turn_count=self._collector.day,
         )
 
     def _determine_victory_condition(self, winner: Optional[str]) -> VictoryCondition:
         """Determine the victory condition based on the winner and game state."""
+        if winner is None:
+            # Tie - both victory conditions were met
+            return VictoryCondition.TIE
+
         if winner == "WEREWOLF":
             # Check if werewolves won by killing all gods or all villagers
             werewolf_count = self._state.get_werewolf_count()

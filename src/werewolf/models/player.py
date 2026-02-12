@@ -90,15 +90,14 @@ STANDARD_12_PLAYER_CONFIG = [
 
 
 def create_players_from_config(
+    rng: random.Random,
     seat_count: int = 12,
-    rng: Optional[random.Random] = None,
 ) -> list[tuple[int, Role]]:
     """Create shuffled role assignments for a game.
 
     Args:
+        rng: random.Random instance for reproducible shuffling.
         seat_count: Number of seats (default 12).
-        rng: Optional random.Random instance for reproducible shuffling.
-             If None, uses random.shuffle directly.
 
     Returns:
         List of (seat, Role) tuples with roles shuffled.
@@ -109,10 +108,7 @@ def create_players_from_config(
         roles.extend([role_config.role] * role_config.count)
 
     # Shuffle the roles
-    if rng is not None:
-        rng.shuffle(roles)
-    else:
-        random.shuffle(roles)
+    rng.shuffle(roles)
 
     # Assign to seats
     return [(seat, roles[seat]) for seat in range(seat_count)]
