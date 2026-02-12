@@ -254,7 +254,6 @@ class InteractiveParticipant:
             return Prompt.ask(
                 prompt_text,
                 console=self._console,
-                multiline=True,
             )
         except (KeyboardInterrupt, EOFError):
             return ""
@@ -397,10 +396,10 @@ class InteractiveParticipant:
         self._show_context(system_prompt, user_prompt, hint)
 
         try:
+            # Note: multiline not supported in older Rich versions
             return Prompt.ask(
                 "Enter your response",
                 console=self._console,
-                multiline=True,
             )
         except (KeyboardInterrupt, EOFError):
             return ""
