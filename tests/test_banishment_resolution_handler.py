@@ -8,6 +8,7 @@ Tests cover:
 5. Hunter+Sheriff banished -> both shoot and badge
 6. Various roles with appropriate last words
 7. Edge cases (no living players, etc.)
+8. StubPlayer integration - handler passes choices correctly
 """
 
 import pytest
@@ -28,6 +29,7 @@ from werewolf.handlers.banishment_resolution_handler import (
     HandlerResult,
 )
 from werewolf.models.player import Player, Role
+from werewolf.ai.stub_ai import StubPlayer
 
 
 # ============================================================================
@@ -806,3 +808,99 @@ class TestBanishmentResolutionPhases:
 
         death_event = result.subphase_log.events[0]
         assert death_event.day == 7
+
+
+# ============================================================================
+# Tests for StubPlayer Integration (Hunter Shoot)
+# ============================================================================
+
+
+class TestBanishmentResolutionHunterStubPlayer:
+    """Tests for hunter banishment when handler uses StubPlayer.
+
+    These tests verify that:
+    1. Handler correctly passes 'choices' to StubPlayer
+    2. StubPlayer uses choices to pick a valid target
+    3. Hunter doesn't skip when targets are available
+
+    This catches a bug where handler didn't pass 'choices', causing
+    StubPlayer to fall back to regex parsing which failed on the
+    multi-line prompt format.
+    """
+
+    @pytest.mark.asyncio
+    async def test_hunter_shoots_with_stub_player(self):
+        """Hunter should shoot (not skip) when StubPlayer is used as participant.
+
+        The handler should pass 'choices' to StubPlayer.decide(), allowing
+        StubPlayer to pick a valid target from the provided options.
+
+        This test will FAIL if handler doesn't pass 'choices' parameter.
+        """
+        # Setup: Day 3, Hunter at seat 7 is being banished
+        players = {
+            0: Player(seat=0, name="W1", role=Role.WEREWOLF, is_alive=True),
+            1: Player(seat=1, name="W2", role=Role.WEREWOLF, is_alive=True),
+            4: Player(seat=4, name="Seer", role=Role.SEER, is_alive=True),
+            7: Player(seat=7, name="Hunter", role=Role.HUNTER, is_alive=True),
+            8: Player(seat=8, name="V1", role=Role.ORDINARY_VILLAGER, is_alive=True),
+        }
+        living = {0, 1, 4, 7, 8}
+        dead = {2, 3, 5, 6, 9, 10, 11}
+
+        context = PhaseContext(players, living, dead, sheriff=None, day=3)
+        banishment_input = BanishmentInput(day=3, banished=7)  # Hunter
+
+        # Use StubPlayer as the participant (the banished hunter)
+        stub = StubPlayer(seed=42)
+
+        handler = BanishmentResolutionHandler()
+        result = await handler(context, banishment_input, participant=stub)
+
+        death_event = result.subphase_log.events[0]
+        assert death_event.actor == 7
+        assert death_event.cause == DeathCause.BANISHMENT
+
+        # CRITICAL: Hunter should have picked a target (NOT None/SKIP)
+        # This will FAIL if handler doesn't pass 'choices' to StubPlayer
+        assert death_event.hunter_shoot_target is not None, (
+            "Hunter should have shot a target, not skipped. "
+            "Handler likely didn't pass 'choices' parameter to StubPlayer."
+        )
+
+        # The target should be a living player (not the hunter themselves)
+        assert death_event.hunter_shoot_target in living
+        assert death_event.hunter_shoot_target != 7  # Can't shoot self
+
+    @pytest.mark.asyncio
+    async def test_hunter_shoots_consistently_with_stub_player(self):
+        """Verify hunter consistently shoots with StubPlayer across multiple runs.
+
+        Uses different seeds to ensure the fix works regardless of random choice.
+        """
+        seats_to_test = [4, 5, 6, 8, 9, 10, 11]  # All non-werewolf living seats
+
+        for seed in [1, 42, 123, 999, 2024]:
+            players = {
+                0: Player(seat=0, name="W1", role=Role.WEREWOLF, is_alive=True),
+                1: Player(seat=1, name="W2", role=Role.WEREWOLF, is_alive=True),
+                7: Player(seat=7, name="Hunter", role=Role.HUNTER, is_alive=True),
+            }
+            living = {0, 1, 7}
+            living.update(seats_to_test)
+            dead = set(range(12)) - living
+
+            context = PhaseContext(players, living, dead, sheriff=None, day=2)
+            banishment_input = BanishmentInput(day=2, banished=7)
+
+            stub = StubPlayer(seed=seed)
+            handler = BanishmentResolutionHandler()
+            result = await handler(context, banishment_input, participant=stub)
+
+            death_event = result.subphase_log.events[0]
+
+            assert death_event.hunter_shoot_target is not None, (
+                f"Seed {seed}: Hunter should not skip when using StubPlayer"
+            )
+            assert death_event.hunter_shoot_target in living
+            assert death_event.hunter_shoot_target != 7

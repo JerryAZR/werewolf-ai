@@ -270,6 +270,7 @@ class CollectingValidator(NoOpValidator):
             validate_night_subphase_order,
             validate_day_subphase_order,
             validate_werewolf_single_query,
+            validate_seer_result,
         )
         # Use (phase, day) as key to separate night and day subphase history
         key = (phase, day)
@@ -299,6 +300,17 @@ class CollectingValidator(NoOpValidator):
                         violations = validate_werewolf_single_query(last_subphase.events)
                         self._violations.extend(violations)
 
+        # G.3: Seer result must match target's actual role
+        if subphase == SubPhase.SEER_ACTION:
+            event_log = collector.get_event_log()
+            if event_log.phases:
+                last_phase = event_log.phases[-1]
+                if last_phase.subphases:
+                    last_subphase = last_phase.subphases[-1]
+                    if last_subphase.micro_phase == SubPhase.SEER_ACTION:
+                        violations = validate_seer_result(last_subphase.events, state)
+                        self._violations.extend(violations)
+
         # Track this subphase as completed AFTER validation
         if key not in self._subphase_history:
             self._subphase_history[key] = set()
@@ -321,6 +333,7 @@ class CollectingValidator(NoOpValidator):
             validate_death_resolution,
             validate_badge_transfer,
             validate_sheriff_election,
+            validate_hunter_banishment_shot,
         )
 
         # State consistency (M.1-M.7)
@@ -369,6 +382,8 @@ class CollectingValidator(NoOpValidator):
             violations = validate_death_resolution(event, state)
             self._violations.extend(violations)
             violations = validate_badge_transfer(event, state)
+            self._violations.extend(violations)
+            violations = validate_hunter_banishment_shot(event, state)
             self._violations.extend(violations)
 
         elif isinstance(event, SheriffOutcome):

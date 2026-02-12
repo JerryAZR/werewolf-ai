@@ -12,7 +12,7 @@ Files:
 - night_werewolf.py: D.1-D.2 werewolf action checks
 - night_witch.py: E.1-E.7 witch action checks
 - night_guard.py: F.1-F.3 guard action checks
-- night_seer.py: G.1-G.2 seer action checks
+- night_seer.py: G.1-G.3 seer action checks
 - day_sheriff.py: H.1-H.5 sheriff election checks
 - day_death.py: I.1-I.9 death resolution checks
 - day_voting.py: J.1-J.2 voting checks
@@ -36,13 +36,13 @@ from .victory import check_victory, validate_victory
 from .night_werewolf import validate_werewolf_action
 from .night_witch import validate_witch_action
 from .night_guard import validate_guard_action
-from .night_seer import validate_seer_action
+from .night_seer import validate_seer_action, validate_seer_result
 
 # Day actions
 from .day_sheriff import validate_sheriff_election, validate_sheriff_opt_out
 from .day_death import validate_death_resolution, validate_death_announcement
 from .day_voting import validate_vote, validate_banishment
-from .hunter import validate_hunter_action, validate_hunter_death_chain
+from .hunter import validate_hunter_action, validate_hunter_death_chain, validate_hunter_banishment_shot
 from .badge_transfer import validate_badge_transfer, validate_no_duplicate_sheriff
 
 # Phase and logging
@@ -75,6 +75,7 @@ __all__ = [
     "validate_witch_action",
     "validate_guard_action",
     "validate_seer_action",
+    "validate_seer_result",
     # Day actions
     "validate_sheriff_election",
     "validate_sheriff_opt_out",
@@ -84,6 +85,7 @@ __all__ = [
     "validate_banishment",
     "validate_hunter_action",
     "validate_hunter_death_chain",
+    "validate_hunter_banishment_shot",
     "validate_badge_transfer",
     "validate_no_duplicate_sheriff",
     # Phase and logging

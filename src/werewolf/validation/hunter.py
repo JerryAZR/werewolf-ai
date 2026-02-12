@@ -1,15 +1,17 @@
-"""Hunter Action Validators (K.1-K.4).
+"""Hunter Action Validators (K.1-K.5).
 
 Rules:
 - K.1: Hunter cannot activate when poisoned
 - K.2: Hunter cannot target dead players
 - K.3: Hunter must either shoot a living player or return "SKIP"
 - K.4: Hunter shot target must die immediately
+- K.5: Hunter on banishment should shoot when targets available
 """
 
 from typing import Optional
 from werewolf.engine.game_state import GameState
 from werewolf.events.game_events import DeathEvent, DeathCause
+from werewolf.models.player import Role
 from .types import ValidationViolation, ValidationSeverity
 
 
@@ -95,4 +97,52 @@ def validate_hunter_death_chain(
     return violations
 
 
-__all__ = ['validate_hunter_action', 'validate_hunter_death_chain']
+def validate_hunter_banishment_shot(
+    event: DeathEvent,
+    state: GameState,
+) -> list[ValidationViolation]:
+    """Validate K.5: Hunter on banishment should shoot when targets exist.
+
+    On banishment (unlike poison death), the hunter can shoot and should
+    typically do so unless there are no valid targets or strategic reasons to skip.
+
+    This is a WARNING rather than ERROR because strategic skipping is valid.
+
+    Args:
+        event: Death event with hunter_shoot_target field
+        state: Game state before event (for checking living players)
+
+    Returns:
+        List of validation violations
+    """
+    violations: list[ValidationViolation] = []
+
+    # Only applies to banishment (hunter can shoot on banishment, not poison)
+    if event.cause != DeathCause.BANISHMENT:
+        return []
+
+    # Check if the deceased is the hunter
+    hunter_player = state.players.get(event.actor)
+    if hunter_player is None or hunter_player.role != Role.HUNTER:
+        return []
+
+    # Check if there are valid targets (living players excluding hunter)
+    living_targets = state.living_players - {event.actor}
+
+    # If targets exist but hunter skipped (None), warn
+    if living_targets and event.hunter_shoot_target is None:
+        violations.append(ValidationViolation(
+            rule_id="K.5",
+            category="Hunter",
+            message=f"Hunter on banishment skipped shot when {len(living_targets)} targets available",
+            severity=ValidationSeverity.WARNING,
+            context={
+                "hunter": event.actor,
+                "living_targets": sorted(living_targets),
+            }
+        ))
+
+    return violations
+
+
+__all__ = ['validate_hunter_action', 'validate_hunter_death_chain', 'validate_hunter_banishment_shot']

@@ -19,6 +19,7 @@ from werewolf.events.game_events import (
     SubPhase,
 )
 from werewolf.models.player import Player, Role
+from werewolf.ui.choices import make_seat_choice
 
 
 # ============================================================================
@@ -524,9 +525,16 @@ class BanishmentResolutionHandler:
             werewolf_hint=werewolf_hint,
         )
 
+        # Build ChoiceSpec for interactive TUI and StubPlayer
+        choices = make_seat_choice(
+            prompt="Choose a player to shoot:",
+            seats=living_players,
+            allow_none=True,  # Hunter can skip
+        )
+
         for attempt in range(self.max_retries):
             try:
-                response = await participant.decide(system, user)
+                response = await participant.decide(system, user, choices=choices)
                 target = self._parse_hunter_shoot_response(response, context, hunter_seat)
                 if target is not None:
                     return target
@@ -535,7 +543,7 @@ class BanishmentResolutionHandler:
 
             hint = "Please enter a valid seat number or SKIP."
             try:
-                response = await participant.decide(system, user, hint)
+                response = await participant.decide(system, user, hint=hint, choices=choices)
                 target = self._parse_hunter_shoot_response(response, context, hunter_seat)
                 if target is not None:
                     return target
