@@ -273,9 +273,9 @@ async def test_nomination_response_parsing():
 
 
 @pytest.mark.asyncio
-async def test_nomination_invalid_response_defaults_to_not_running():
-    """Test that invalid responses default to not running."""
-    from werewolf.handlers.nomination_handler import NominationHandler
+async def test_nomination_invalid_response_raises_exception():
+    """Test that invalid responses raise MaxRetriesExceededError after max retries."""
+    from werewolf.handlers.nomination_handler import NominationHandler, MaxRetriesExceededError
 
     players = {
         seat: Player(seat=seat, name=f"Player_{seat}", role=Role.VILLAGER, player_type=PlayerType.AI)
@@ -290,21 +290,14 @@ async def test_nomination_invalid_response_defaults_to_not_running():
         day=1,
     )
 
-    # Invalid responses
+    # Invalid responses - will fail validation and raise after max_retries
     participants = {
         0: MockParticipant(response="maybe"),
-        1: MockParticipant(response="yes"),
-        2: MockParticipant(response=""),  # empty
     }
 
     handler = NominationHandler()
-    result = await handler(context, list(participants.items()))
-
-    # All should default to not running
-    events_by_seat = {event.actor: event for event in result.subphase_log.events}
-    assert events_by_seat[0].running is False
-    assert events_by_seat[1].running is False
-    assert events_by_seat[2].running is False
+    with pytest.raises(MaxRetriesExceededError):
+        await handler(context, list(participants.items()))
 
 
 @pytest.mark.asyncio

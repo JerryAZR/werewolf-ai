@@ -50,6 +50,7 @@ from .phase_order import (
     validate_phase_order,
     validate_night_subphase_order,
     validate_day_subphase_order,
+    validate_werewolf_single_query,
 )
 from .event_logging import (
     validate_event_logging,
@@ -89,6 +90,7 @@ __all__ = [
     "validate_phase_order",
     "validate_night_subphase_order",
     "validate_day_subphase_order",
+    "validate_werewolf_single_query",
     "validate_event_logging",
     "validate_phase_logging",
     "validate_night_outcome",

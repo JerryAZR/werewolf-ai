@@ -543,6 +543,86 @@ class TestWerewolfActionRetryBehavior:
             await handler(context, [(0, participants[0])])
 
 
+class TestWerewolfActionSingleQuery:
+    """Tests for single collective decision (C.16).
+
+    Per RULES.md: "Werewolves make a collective decision via a single AI call."
+    This means the handler should query ONE representative werewolf,
+    not tally individual votes from all werewolves.
+    """
+
+    @pytest.mark.asyncio
+    async def test_multiple_werewolves_should_not_tally_votes(self):
+        """Test that multiple werewolves don't tally individual votes.
+
+        This test should FAIL with the current buggy implementation.
+        The current implementation queries all werewolves and tallies votes,
+        which violates C.16 (single collective decision).
+        """
+        import json
+        # Import the real handler from werewolf.handlers
+        from werewolf.handlers import WerewolfHandler as RealWerewolfHandler
+
+        context, participants = make_context_standard_12()
+
+        # All werewolves vote for the same target
+        participants[0] = MockParticipant("8")  # Vote for villager
+        participants[1] = MockParticipant("8")  # Vote for same villager
+        participants[2] = MockParticipant("8")  # Vote for same villager
+        participants[3] = MockParticipant("8")  # Vote for same villager
+
+        handler = RealWerewolfHandler()
+        result = await handler(context, [
+            (0, participants[0]),
+            (1, participants[1]),
+            (2, participants[2]),
+            (3, participants[3]),
+        ])
+
+        kill_event = result.subphase_log.events[0]
+        assert isinstance(kill_event, WerewolfKill)
+
+        # The bug: debug_info contains target_votes showing multiple queries
+        assert kill_event.debug_info is not None, \
+            "WerewolfHandler should always set debug_info for auditing"
+        debug = json.loads(kill_event.debug_info)
+
+        # This assertion will FAIL with the current buggy implementation
+        # because target_votes contains 4 entries (one per werewolf)
+        assert "target_votes" not in debug, \
+            "WerewolfAction should make single collective decision, not tally votes from all werewolves"
+
+    @pytest.mark.asyncio
+    async def test_debug_info_should_not_contain_target_votes(self):
+        """Test that debug_info doesn't contain target_votes field.
+
+        The target_votes field indicates the handler queried multiple werewolves.
+        Per C.16, there should be exactly ONE query, not multiple.
+        """
+        import json
+        from werewolf.handlers import WerewolfHandler as RealWerewolfHandler
+
+        context, participants = make_context_two_werewolves()
+
+        participants[0] = MockParticipant("4")  # Vote for seer
+        participants[3] = MockParticipant("4")  # Vote for seer
+
+        handler = RealWerewolfHandler()
+        result = await handler(context, [
+            (0, participants[0]),
+            (3, participants[3]),
+        ])
+
+        kill_event = result.subphase_log.events[0]
+        assert isinstance(kill_event, WerewolfKill)
+
+        # Check debug_info doesn't contain multiple vote data
+        if kill_event.debug_info:
+            debug = json.loads(kill_event.debug_info)
+            assert "target_votes" not in debug or len(debug.get("target_votes", {})) <= 1, \
+                "WerewolfAction should make single collective decision, not multiple queries"
+
+
 # ============================================================================
 # WerewolfHandler Implementation (for testing)
 # ============================================================================

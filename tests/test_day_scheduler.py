@@ -414,15 +414,18 @@ class TestVictoryDetection:
         """Test victory detection when werewolves win."""
         scheduler = DayScheduler()
 
-        # Set up state where werewolves have won (all gods dead)
-        # STANDARD_12_PLAYER_CONFIG roles by seat:
-        # 0-3: Werewolves, 4: Seer, 5: Witch, 6: Guard, 7: Hunter, 8-11: Ordinary Villagers
-        initial_state.players[4].is_alive = False  # Seer dies
-        initial_state.players[5].is_alive = False  # Witch dies
-        initial_state.players[6].is_alive = False  # Guard dies
-        initial_state.players[7].is_alive = False  # Hunter dies
-        initial_state.living_players = {0, 1, 2, 3, 8, 9, 10, 11}  # 4 werewolves + 4 villagers alive
-        initial_state.dead_players = {4, 5, 6, 7}
+        # Set up state where werewolves have won (all non-werewolves dead)
+        # Find werewolf seats dynamically since roles are shuffled
+        werewolf_seats = {seat for seat, p in players.items() if p.role == Role.WEREWOLF}
+        non_werewolf_seats = {seat for seat in players.keys() if seat not in werewolf_seats}
+
+        # Kill all non-werewolves
+        for seat in non_werewolf_seats:
+            initial_state.players[seat].is_alive = False
+
+        # Update living/dead sets - only werewolves alive
+        initial_state.living_players = werewolf_seats.copy()
+        initial_state.dead_players = non_werewolf_seats.copy()
 
         participants = create_participants_from_players(initial_state.players, seed=666)
 
@@ -444,14 +447,16 @@ class TestVictoryDetection:
         scheduler = DayScheduler()
 
         # Set up state where villagers have won (all werewolves dead)
-        # STANDARD_12_PLAYER_CONFIG roles by seat:
-        # 0-3: Werewolves, 4: Seer, 5: Witch, 6: Guard, 7: Hunter, 8-11: Ordinary Villagers
-        initial_state.players[0].is_alive = False  # Werewolf dies
-        initial_state.players[1].is_alive = False  # Werewolf dies
-        initial_state.players[2].is_alive = False  # Werewolf dies
-        initial_state.players[3].is_alive = False  # Werewolf dies
-        initial_state.living_players = {4, 5, 6, 7, 8, 9, 10, 11}  # 8 villagers alive
-        initial_state.dead_players = {0, 1, 2, 3}
+        # Find werewolf seats dynamically since roles are shuffled
+        werewolf_seats = {seat for seat, p in players.items() if p.role == Role.WEREWOLF}
+
+        # Kill all werewolves
+        for seat in werewolf_seats:
+            initial_state.players[seat].is_alive = False
+
+        # Update living/dead sets - only non-werewolves alive
+        initial_state.living_players = {seat for seat in players.keys() if seat not in werewolf_seats}
+        initial_state.dead_players = werewolf_seats.copy()
 
         participants = create_participants_from_players(initial_state.players, seed=777)
 

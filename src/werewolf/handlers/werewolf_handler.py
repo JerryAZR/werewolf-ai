@@ -153,42 +153,33 @@ class WerewolfHandler:
         else:
             participant_dict = dict(participants)
 
-        # Single werewolf - query directly
-        if len(werewolf_seats) == 1:
-            seat = werewolf_seats[0]
-            participant = participant_dict.get(seat)
-            if participant:
-                target = await self._get_valid_target(context, participant, seat)
-                events.append(WerewolfKill(
-                    actor=seat,
-                    target=target,
-                    phase=Phase.NIGHT,
-                    micro_phase=SubPhase.WEREWOLF_ACTION,
-                    day=context.day,
-                ))
+        # Select ONE representative werewolf to make the collective decision
+        # Priority: human players first, then lowest seat number
+        from werewolf.models.player import PlayerType
+        human_werewolves = [
+            seat for seat in werewolf_seats
+            if context.players[seat].player_type == PlayerType.HUMAN
+        ]
+        if human_werewolves:
+            representative = min(human_werewolves)  # lowest human seat
         else:
-            # Multiple werewolves - collect votes
-            votes: dict[int, int] = {}
-            for seat in werewolf_seats:
-                participant = participant_dict.get(seat)
-                if participant:
-                    votes[seat] = await self._get_valid_target(context, participant, seat)
+            representative = min(werewolf_seats)  # fallback to lowest seat
 
-            # Consensus: most votes wins, lowest seat breaks ties
-            target = self._resolve_consensus(votes, context)
-            # Use first werewolf (lowest seat) as representative actor
-            actor = min(werewolf_seats)
+        # Query only the representative werewolf
+        participant = participant_dict.get(representative)
+        if participant:
+            target = await self._get_valid_target(context, participant, representative)
 
-            # Create debug info
+            # Create debug info with collective decision info
             import json
             debug_info = json.dumps({
                 "werewolf_seats": werewolf_seats,
-                "target_votes": votes,
-                "final_target": target,
+                "representative": representative,
+                "target": target,
             })
 
             events.append(WerewolfKill(
-                actor=actor,
+                actor=representative,
                 target=target,
                 phase=Phase.NIGHT,
                 micro_phase=SubPhase.WEREWOLF_ACTION,

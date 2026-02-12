@@ -1,4 +1,4 @@
-"""Phase Order Validators (C.1-C.15).
+"""Phase Order Validators (C.1-C.16).
 
 Rules:
 - C.1: Game must start with Night 1
@@ -16,6 +16,7 @@ Rules:
 - C.13: Banishment Resolution must follow Voting IFF (banishment occurred)
 - C.14: Banishment Resolution cannot occur IFF (tie vote)
 - C.15: Game must end after 20 days maximum
+- C.16: WerewolfAction should make exactly one collective decision (not multiple votes)
 """
 
 from typing import Optional
@@ -247,13 +248,14 @@ def validate_day_subphase_order(
     """
     violations: list[ValidationViolation] = []
 
-    # C.7: Campaign must be the first phase of Day 1
+    # C.7: Campaign must be the first phase of Day 1 (or follow NOMINATION)
     if day == 1 and current_subphase == SubPhase.CAMPAIGN:
-        if completed_subphases:
+        invalid_predecessors = completed_subphases - {SubPhase.NOMINATION}
+        if invalid_predecessors:
             violations.append(ValidationViolation(
                 rule_id="C.7",
                 category="Phase Order",
-                message="Campaign must be the first subphase of Day 1",
+                message="Campaign must be the first subphase of Day 1 (or follow NOMINATION)",
                 severity=ValidationSeverity.ERROR,
                 context={"completed": list(completed_subphases)}
             ))
@@ -268,13 +270,14 @@ def validate_day_subphase_order(
             context={"day": day}
         ))
 
-    # C.9: OptOut must follow Campaign IFF candidates exist
+    # C.9: OptOut must follow Campaign or NOMINATION IFF candidates exist
     if current_subphase == SubPhase.OPT_OUT:
-        if SubPhase.CAMPAIGN not in completed_subphases:
+        allowed_predecessors = {SubPhase.CAMPAIGN, SubPhase.NOMINATION}
+        if not allowed_predecessors.intersection(completed_subphases):
             violations.append(ValidationViolation(
                 rule_id="C.9",
                 category="Phase Order",
-                message="OptOut must follow Campaign",
+                message="OptOut must follow Campaign or NOMINATION",
                 severity=ValidationSeverity.ERROR,
                 context={"completed": list(completed_subphases)}
             ))
@@ -289,11 +292,12 @@ def validate_day_subphase_order(
 
     # C.10: Sheriff Election must follow OptOut IFF candidates remain
     if current_subphase == SubPhase.SHERIFF_ELECTION:
-        if SubPhase.OPT_OUT not in completed_subphases:
+        allowed_predecessors = {SubPhase.OPT_OUT, SubPhase.CAMPAIGN, SubPhase.NOMINATION}
+        if not allowed_predecessors.intersection(completed_subphases):
             violations.append(ValidationViolation(
                 rule_id="C.10",
                 category="Phase Order",
-                message="Sheriff Election must follow OptOut",
+                message="Sheriff Election must follow OptOut, Campaign, or NOMINATION",
                 severity=ValidationSeverity.ERROR,
                 context={"completed": list(completed_subphases)}
             ))
@@ -401,6 +405,46 @@ def validate_banishment_resolution(
     return violations
 
 
+def validate_werewolf_single_query(
+    events: list["GameEvent"],
+) -> list[ValidationViolation]:
+    """Validate C.16: WerewolfAction should make exactly one collective decision.
+
+    Per RULES.md: "Werewolves make a collective decision via a single AI call."
+    The handler should query ONE representative werewolf (human priority, then lowest seat),
+    not tally individual votes from all werewolves.
+
+    Args:
+        events: Events from the WerewolfAction subphase
+
+    Returns:
+        List of validation violations
+    """
+    import json
+    from werewolf.events.game_events import WerewolfKill
+
+    violations: list[ValidationViolation] = []
+
+    for event in events:
+        if isinstance(event, WerewolfKill) and event.debug_info:
+            try:
+                debug = json.loads(event.debug_info)
+                if "target_votes" in debug:
+                    vote_count = len(debug["target_votes"])
+                    if vote_count > 1:
+                        violations.append(ValidationViolation(
+                            rule_id="C.16",
+                            category="Phase Order",
+                            message=f"WerewolfAction made {vote_count} individual queries instead of 1 collective decision",
+                            severity=ValidationSeverity.ERROR,
+                            context={"vote_count": vote_count, "werewolf_seats": debug.get("werewolf_seats")}
+                        ))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    return violations
+
+
 __all__ = [
     'validate_game_start',
     'validate_phase_transition',
@@ -409,5 +453,6 @@ __all__ = [
     'validate_night_phase_completion',
     'validate_day_subphase_order',
     'validate_day_1_sheriff_order',
+    'validate_werewolf_single_query',
     'validate_banishment_resolution',
 ]

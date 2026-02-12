@@ -17,6 +17,16 @@ from werewolf.models.player import Player, Role
 
 
 # ============================================================================
+# Exceptions
+# ============================================================================
+
+
+class MaxRetriesExceededError(Exception):
+    """Raised when max retries are exceeded for a participant decision."""
+    pass
+
+
+# ============================================================================
 # Handler Result Types
 # ============================================================================
 
@@ -261,24 +271,10 @@ Enter your decision:"""
 
             # Invalid response
             if attempt == self.max_retries - 1:
-                # Default to not running on failure
-                return SheriffNomination(
-                    actor=for_seat,
-                    running=False,
-                    phase=Phase.DAY,
-                    micro_phase=SubPhase.NOMINATION,
-                    day=context.day,
-                    debug_info="Max retries exceeded, defaulting to not running",
+                raise MaxRetriesExceededError(
+                    f"Player {for_seat} failed to provide valid nomination decision "
+                    f"after {self.max_retries} attempts. Last response: {raw!r}"
                 )
-
-        # Fallback (should not reach here)
-        return SheriffNomination(
-            actor=for_seat,
-            running=False,
-            phase=Phase.DAY,
-            micro_phase=SubPhase.NOMINATION,
-            day=context.day,
-        )
 
     def _parse_nomination(self, raw_response: str) -> Optional[bool]:
         """Parse the raw response into nomination decision.
@@ -300,16 +296,6 @@ Enter your decision:"""
                 return None
         except (ValueError, AttributeError):
             return None
-
-
-class MaxRetriesExceededError(Exception):
-    """Raised when max retries are exceeded."""
-    pass
-
-
-# ============================================================================
-# PhaseContext (for use with the handler)
-# ============================================================================
 
 
 class PhaseContext:

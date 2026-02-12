@@ -269,6 +269,7 @@ class CollectingValidator(NoOpValidator):
         from werewolf.validation import (
             validate_night_subphase_order,
             validate_day_subphase_order,
+            validate_werewolf_single_query,
         )
         # Use (phase, day) as key to separate night and day subphase history
         key = (phase, day)
@@ -285,6 +286,18 @@ class CollectingValidator(NoOpValidator):
                 has_sheriff_candidates=True,
             )
             self._violations.extend(violations)
+
+        # C.16: WerewolfAction should make exactly one collective decision
+        if subphase == SubPhase.WEREWOLF_ACTION:
+            # Get events from the most recent subphase log
+            event_log = collector.get_event_log()
+            if event_log.phases:
+                last_phase = event_log.phases[-1]
+                if last_phase.subphases:
+                    last_subphase = last_phase.subphases[-1]
+                    if last_subphase.micro_phase == SubPhase.WEREWOLF_ACTION:
+                        violations = validate_werewolf_single_query(last_subphase.events)
+                        self._violations.extend(violations)
 
         # Track this subphase as completed AFTER validation
         if key not in self._subphase_history:

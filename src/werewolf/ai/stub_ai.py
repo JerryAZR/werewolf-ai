@@ -165,6 +165,8 @@ class StubPlayer:
 
         # Check for campaign/sheriff phases before discussion/voting
         # Sheriff election requires more specific "sheriff vote" pattern
+        if "nomination" in text_lower and "sheriff" in text_lower:
+            return SubPhase.NOMINATION
         if "campaign" in text_lower or "sheriff" in text_lower:
             if "opt-out" in text_lower or "withdraw" in text_lower:
                 return SubPhase.OPT_OUT
@@ -221,6 +223,7 @@ class StubPlayer:
             SubPhase.WITCH_ACTION: self._witch_response,
             SubPhase.GUARD_ACTION: self._guard_response,
             SubPhase.SEER_ACTION: self._seer_response,
+            SubPhase.NOMINATION: self._nomination_response,
             SubPhase.CAMPAIGN: self._speech_response,
             SubPhase.OPT_OUT: self._opt_out_response,
             SubPhase.SHERIFF_ELECTION: self._sheriff_vote_response,
@@ -242,6 +245,8 @@ class StubPlayer:
             SubPhase.WITCH_ACTION: lambda r: r in ["pass"] or r.startswith(("antidote", "poison")),
             SubPhase.GUARD_ACTION: lambda r: r == "-1" or r.isdigit(),
             SubPhase.SEER_ACTION: lambda r: r.isdigit(),
+            # Nomination: "run" or "not running"
+            SubPhase.NOMINATION: lambda r: r in ["run", "not running"],
             # Campaign: either CAMPAIGN_NOT_RUNNING or a real speech (>10 chars)
             SubPhase.CAMPAIGN: lambda r: r == CAMPAIGN_NOT_RUNNING or len(r) > 10,
             SubPhase.OPT_OUT: lambda r: r in ["run", "opt-out", "stay"],
@@ -335,6 +340,16 @@ class StubPlayer:
             "Something feels off about the early discussion.",
         ]
         return random.choice(speeches)
+
+    async def _nomination_response(self, prompt: str) -> str:
+        """Generate sheriff nomination decision.
+
+        Returns "run" or "not running" based on random chance.
+        """
+        # ~40% chance to run for sheriff
+        if random.random() < 0.4:
+            return "run"
+        return "not running"
 
     async def _opt_out_response(self, prompt: str) -> str:
         """Generate sheriff candidacy decision."""
