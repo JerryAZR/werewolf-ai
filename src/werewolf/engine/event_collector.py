@@ -192,6 +192,8 @@ class EventCollector:
             game_start: The GameStart event.
         """
         self._event_log.game_start = game_start
+        # Also populate roles_secret on the event log for formatting
+        self._event_log.roles_secret = game_start.roles_secret.copy()
 
     def set_game_over(self, game_over: "GameOver") -> None:
         """Set the game over event.

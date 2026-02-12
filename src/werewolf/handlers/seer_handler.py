@@ -170,7 +170,7 @@ class SeerHandler:
             action = SeerAction(
                 actor=seer_seat,
                 target=default_target,
-                result=SeerResult.GOOD,  # Engine will compute correct result
+                result=self._compute_seer_result(context, default_target) if default_target else SeerResult.GOOD,
                 phase=Phase.NIGHT,
                 micro_phase=SubPhase.SEER_ACTION,
                 day=context.day,
@@ -341,7 +341,7 @@ Enter your choice (e.g., "7"):"""
                 return SeerAction(
                     actor=seer_seat,
                     target=target,
-                    result=SeerResult.GOOD,  # Engine will compute correct result
+                    result=self._compute_seer_result(context, target),
                     phase=Phase.NIGHT,
                     micro_phase=SubPhase.SEER_ACTION,
                     day=context.day,
@@ -369,7 +369,7 @@ Enter your choice (e.g., "7"):"""
                 return SeerAction(
                     actor=seer_seat,
                     target=target,
-                    result=SeerResult.GOOD,  # Engine will compute correct result
+                    result=self._compute_seer_result(context, target),
                     phase=Phase.NIGHT,
                     micro_phase=SubPhase.SEER_ACTION,
                     day=context.day,
@@ -386,7 +386,7 @@ Enter your choice (e.g., "7"):"""
         return SeerAction(
             actor=seer_seat,
             target=default_target,
-            result=SeerResult.GOOD,
+            result=self._compute_seer_result(context, default_target) if default_target else SeerResult.GOOD,
             phase=Phase.NIGHT,
             micro_phase=SubPhase.SEER_ACTION,
             day=context.day,
@@ -465,6 +465,21 @@ Enter your choice (e.g., "7"):"""
             is_valid=True,
             debug_info=f"action=CHECK, target={target}",
         )
+
+    def _compute_seer_result(self, context: "PhaseContext", target: int) -> SeerResult:
+        """Compute the seer's check result based on the target's actual role.
+
+        Args:
+            context: Game state with player roles
+            target: The seat being checked
+
+        Returns:
+            SeerResult.WEREWOLF if target is a werewolf, SeerResult.GOOD otherwise
+        """
+        player = context.get_player(target)
+        if player is not None and player.role == Role.WEREWOLF:
+            return SeerResult.WEREWOLF
+        return SeerResult.GOOD
 
 
 class ValidationResult(BaseModel):

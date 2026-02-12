@@ -626,6 +626,75 @@ def expected_seer_action(
 
 
 # ============================================================================
+# Tests for SeerAction with REAL Handler (from src/werewolf/handlers/seer_handler.py)
+# ============================================================================
+
+
+class TestRealSeerHandler:
+    """Tests using the REAL SeerHandler from src/werewolf/handlers/seer_handler.py.
+
+    These tests verify the actual game engine behavior, not test doubles.
+    """
+
+    @pytest.mark.asyncio
+    async def test_real_handler_seer_checks_werewolf_returns_werewolf(self):
+        """Test that real SeerHandler correctly returns WEREWOLF when checking werewolf.
+
+        This test uses the actual SeerHandler from the game engine.
+        It should FAIL if the handler hardcodes GOOD instead of computing from target's role.
+        """
+        from werewolf.handlers.seer_handler import SeerHandler as RealSeerHandler
+        from werewolf.engine.game_state import GameState
+
+        # Create a simple context that GameState can work with
+        players = {
+            4: Player(seat=4, name="Seer", role=Role.SEER, is_alive=True),
+            0: Player(seat=0, name="Werewolf1", role=Role.WEREWOLF, is_alive=True),
+            1: Player(seat=1, name="Villager1", role=Role.ORDINARY_VILLAGER, is_alive=True),
+        }
+
+        # Use GameState with the real handler
+        state = GameState(
+            players=players,
+            living_players={0, 1, 4},
+            dead_players=set(),
+            sheriff=None,
+            day=1,
+        )
+
+        # Import the real PhaseContext from the handler module
+        from werewolf.handlers.seer_handler import PhaseContext
+
+        context = PhaseContext(
+            players=players,
+            living_players={0, 1, 4},
+            dead_players=set(),
+            sheriff=None,
+            day=1,
+        )
+
+        # Create mock participant that checks werewolf at seat 0
+        class MockParticipant:
+            async def decide(self, system, user, hint=None, choices=None):
+                return "0"  # Check seat 0 (werewolf)
+
+        handler = RealSeerHandler()
+        result = await handler(context, [(4, MockParticipant())])
+
+        # The seer checked seat 0, which is a werewolf
+        # The result SHOULD be SeerResult.WEREWOLF
+        action_event = result.subphase_log.events[0]
+        assert isinstance(action_event, SeerAction)
+        assert action_event.target == 0  # Checked werewolf
+
+        # This assertion will FAIL if handler hardcodes GOOD
+        assert action_event.result == SeerResult.WEREWOLF, (
+            f"Seer checked werewolf at seat 0 but got {action_event.result} instead of WEREWOLF. "
+            "This indicates the handler is hardcoding GOOD instead of computing from target's role."
+        )
+
+
+# ============================================================================
 # Tests for SeerAction Valid Scenarios
 # ============================================================================
 

@@ -14,6 +14,7 @@ from .game_events import (
     GameOver,
     GameEvent,
 )
+from .event_formatter import EventFormatter
 
 
 # ============================================================================
@@ -30,14 +31,31 @@ class SubPhaseLog(BaseModel):
     micro_phase: SubPhase
     events: list[GameEvent] = Field(default_factory=list)
 
-    def __str__(self) -> str:
+    def describe(self, roles_secret: Optional[dict[int, str]] = None) -> str:
+        """Format subphase log as string with optional role context.
+
+        Args:
+            roles_secret: Optional dict mapping seat to role for formatted output.
+                         If None, uses default event __str__.
+        """
         if not self.events:
             return self.micro_phase.name
 
-        lines = [f"{self.micro_phase.name}"]
-        for event in self.events:
-            lines.append(f"    {event}")
-        return "\n".join(lines)
+        if roles_secret:
+            formatter = EventFormatter(roles_secret)
+            lines = [f"{self.micro_phase.name}"]
+            for event in self.events:
+                lines.append(f"    {formatter.format(event)}")
+            return "\n".join(lines)
+        else:
+            lines = [f"{self.micro_phase.name}"]
+            for event in self.events:
+                lines.append(f"    {event}")
+            return "\n".join(lines)
+
+    def __str__(self) -> str:
+        """Default string representation without role context."""
+        return self.describe()
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -66,7 +84,13 @@ class PhaseLog(BaseModel):
             raise ValueError(f"number must be >= 1, got {self.number}")
         return self
 
-    def __str__(self) -> str:
+    def describe(self, roles_secret: Optional[dict[int, str]] = None) -> str:
+        """Format phase log as string with optional role context.
+
+        Args:
+            roles_secret: Optional dict mapping seat to role for formatted output.
+                         If None, uses default event __str__.
+        """
         header = f"=== {self.kind.name} {self.number} ==="
 
         if not self.subphases:
@@ -76,10 +100,15 @@ class PhaseLog(BaseModel):
         for i, sp in enumerate(self.subphases):
             if i > 0:
                 lines.append("")  # Blank line between subphases
-            sp_lines = str(sp).split("\n")
+            # Use type().describe() to avoid Pydantic __getattr__ issues
+            sp_lines = SubPhaseLog.describe(sp, roles_secret).split("\n")
             for line in sp_lines:
                 lines.append(f"  {line}")
         return "\n".join(lines)
+
+    def __str__(self) -> str:
+        """Default string representation without role context."""
+        return self.describe()
 
 
 # ============================================================================
@@ -116,7 +145,10 @@ class GameEventLog(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
     def __str__(self) -> str:
-        """Human-readable summary of the entire game."""
+        """Human-readable summary of the entire game with role context."""
+        # Create formatter with role information
+        formatter = EventFormatter(self.roles_secret)
+
         lines = [f"Game {self.game_id} ({self.player_count} players)"]
         if self.game_start:
             lines.append(f"  Started: {self.game_start.player_count} players")
@@ -124,12 +156,14 @@ class GameEventLog(BaseModel):
         for i, phase in enumerate(self.phases):
             if i > 0:
                 lines.append("")  # Blank line between phases
-            phase_lines = str(phase).split("\n")
+            # Pass roles_secret to phase for formatted output
+            phase_lines = PhaseLog.describe(phase, self.roles_secret).split("\n")
             lines.extend(phase_lines)
 
         if self.game_over:
             lines.append("")
-            lines.append(f"  Game Over: {self.game_over.winner} wins by {self.game_over.condition.value}")
+            game_over_str = formatter.format(self.game_over)
+            lines.append(f"  {game_over_str}")
 
         return "\n".join(lines)
 
