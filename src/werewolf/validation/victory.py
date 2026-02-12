@@ -91,7 +91,7 @@ def validate_a2_villagers_win_when_werewolves_dead(
                 severity=ValidationSeverity.ERROR,
                 context={"declared_winner": declared_winner, "is_over": is_over}
             ))
-        elif declared_winner != Camp.VILLAGER:
+        elif declared_winner != "VILLAGER":
             violations.append(ValidationViolation(
                 rule_id="A.2",
                 category="Victory Conditions",
@@ -139,7 +139,7 @@ def validate_a3_werewolves_win_when_villagers_dead(
                 severity=ValidationSeverity.ERROR,
                 context={"declared_winner": declared_winner, "is_over": is_over}
             ))
-        elif declared_winner != Camp.WEREWOLF:
+        elif declared_winner != "WEREWOLF":
             violations.append(ValidationViolation(
                 rule_id="A.3",
                 category="Victory Conditions",
@@ -185,7 +185,7 @@ def validate_a4_werewolves_win_when_gods_dead(
                 severity=ValidationSeverity.ERROR,
                 context={"declared_winner": declared_winner, "is_over": is_over}
             ))
-        elif declared_winner != Camp.WEREWOLF:
+        elif declared_winner != "WEREWOLF":
             violations.append(ValidationViolation(
                 rule_id="A.4",
                 category="Victory Conditions",

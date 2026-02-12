@@ -421,6 +421,7 @@ class CollectingValidator(NoOpValidator):
         from werewolf.validation import (
             validate_no_duplicate_sheriff,
             validate_state_consistency,
+            validate_victory,
         )
 
         # Validate sheriff state is consistent
@@ -429,6 +430,11 @@ class CollectingValidator(NoOpValidator):
 
         # Final state consistency check
         violations = validate_state_consistency(state, None)
+        self._violations.extend(violations)
+
+        # Validate victory conditions (A.1-A.5)
+        declared_winner = winner if winner else None
+        violations = validate_victory(state, declared_winner, True)
         self._violations.extend(violations)
 
         return self._violations
