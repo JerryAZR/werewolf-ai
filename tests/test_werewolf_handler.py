@@ -502,6 +502,39 @@ class TestWerewolfActionPromptFiltering:
         # Should NOT reveal roles of dead players
         assert "seer" not in system.lower()  # Dead player role hidden
 
+    def test_choice_spec_includes_all_living_players(self):
+        """Test that ChoiceSpec includes ALL living players (including self and teammates).
+
+        IMPORTANT: Werewolves can target ANY living player, including:
+        - Themselves (suicide strategy)
+        - Their own werewolf teammates (betrayal/chaos strategy)
+
+        The game rules enforce valid choices at validation time, not at prompt time.
+        This gives werewolves full strategic freedom in the TUI/human interface.
+
+        This test ensures the choice spec does NOT filter out teammates.
+        """
+        handler = WerewolfHandler()
+        context, _ = make_context_standard_12()
+
+        # Werewolf at seat 0 with teammates at seats 1, 2, 3
+        choice_spec = handler.build_choice_spec(context, for_seat=0)
+
+        # Should have all living players (0-11, all alive on Night 1)
+        assert choice_spec is not None
+
+        # Extract seat numbers from options
+        seats = [int(opt.value) for opt in choice_spec.options]
+        assert 0 in seats  # Self included
+        assert 1 in seats  # Teammate included
+        assert 2 in seats  # Teammate included
+        assert 3 in seats  # Teammate included
+        assert 4 in seats  # Non-werewolf included
+        # Should have all 12 players
+        assert len(seats) == 12
+        # Should allow skip
+        assert choice_spec.allow_none is True
+
 
 class TestWerewolfActionRetryBehavior:
     """Tests for retry behavior with invalid inputs."""
@@ -723,6 +756,28 @@ Dead players: {', '.join(map(str, dead_players)) if dead_players else 'none'}"""
         user = "Choose a target to kill (enter seat number, or -1 to skip):"
 
         return system, user
+
+    def build_choice_spec(
+        self,
+        context: PhaseContext,
+        for_seat: int,
+    ):
+        """Build ChoiceSpec for interactive TUI.
+
+        IMPORTANT: Werewolves can target ANY living player, including:
+        - Themselves (suicide)
+        - Their own werewolf teammates (betrayal/chaos strategy)
+
+        This is intentionally different from the LLM prompt which filters teammates
+        for game balance. The game rules are enforced at validation time, not at
+        prompt generation time. This gives werewolves full strategic freedom.
+
+        Returns ChoiceSpec with ALL living players + skip option.
+        """
+        # Use the real handler's implementation via dynamic import
+        from werewolf.handlers import WerewolfHandler as RealHandler
+        real_handler = RealHandler()
+        return real_handler.build_choice_spec(context, for_seat)
 
     async def _get_valid_target(
         self,

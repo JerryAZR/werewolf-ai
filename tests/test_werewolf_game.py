@@ -199,9 +199,8 @@ class TestWerewolfGameVictoryDetection:
 
         event_log, winner = await game.run()
 
-        # Verify winner is valid
-        assert winner is not None
-        assert winner in ["WEREWOLF", "VILLAGER"]
+        # Verify winner is valid (None = tie per A.5)
+        assert winner in ["WEREWOLF", "VILLAGER", None]
 
     @pytest.mark.asyncio
     async def test_victory_detected_villagers_win(self, standard_players: dict[int, Player]):
@@ -216,9 +215,8 @@ class TestWerewolfGameVictoryDetection:
 
         event_log, winner = await game.run()
 
-        # Verify winner is valid
-        assert winner is not None
-        assert winner in ["WEREWOLF", "VILLAGER"]
+        # Verify winner is valid (None = tie per A.5)
+        assert winner in ["WEREWOLF", "VILLAGER", None]
 
     @pytest.mark.asyncio
     async def test_game_over_condition_is_set(self, standard_players: dict[int, Player]):
@@ -474,7 +472,8 @@ class TestWerewolfGameValidator:
 
         # Verify game produced a result
         assert event_log is not None
-        assert winner in ["WEREWOLF", "VILLAGER"]
+        # Winner can be None for ties (A.5 condition)
+        assert winner in ["WEREWOLF", "VILLAGER", None]
         assert event_log.game_over is not None
 
         # Get any validation violations

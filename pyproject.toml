@@ -12,8 +12,12 @@ dependencies = [
     "textual>=0.50.0",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23.0", "pytest-timeout"]
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-timeout",
+]
 
 [project.scripts]
 werewolf = "werewolf.play:main"

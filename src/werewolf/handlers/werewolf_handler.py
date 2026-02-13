@@ -16,6 +16,12 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.models.player import Player, Role
+from werewolf.prompt_levels import (
+    get_werewolf_system,
+    make_werewolf_context,
+    build_werewolf_decision,
+    DecisionPrompt,
+)
 
 
 def _get_choice_spec_helpers():
@@ -208,48 +214,20 @@ class WerewolfHandler:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        # Filter visible information
-        living_players = sorted(context.living_players)
-        werewolf_teammates = [
-            seat for seat in living_players
-            if context.is_werewolf(seat) and seat != for_seat
-        ]
-        dead_players = sorted(context.dead_players)
+        # Get static system prompt (Level 1)
+        system = get_werewolf_system()
 
-        # Build system prompt
-        # Note: Night number = day (game starts Night 1 → Day 1)
-        night = context.day
-        system = f"""You are a werewolf on Night {night}.
-Your teammates are: {', '.join(map(str, werewolf_teammates)) if werewolf_teammates else 'none (you are alone)'}
+        # Build game state context (Level 2)
+        state_context = make_werewolf_context(
+            context=context,
+            your_seat=for_seat,
+        )
 
-Living players (seat numbers): {', '.join(map(str, living_players))}
-Dead players: {', '.join(map(str, dead_players)) if dead_players else 'none'}
+        # Build decision prompt (Level 3)
+        decision = build_werewolf_decision(state_context)
 
-IMPORTANT RULES:
-1. You MAY choose to skip killing (enter -1 or "none").
-2. You CANNOT kill dead players.
-3. You decide the final target for your werewolf team.
-
-Your response should be a single integer representing the seat number of your target, or -1 to skip.
-Example: "7" means you want to kill the player at seat 7. "-1" means you want to skip."""
-
-        # Build user prompt
-        sheriff_info = ""
-        if context.sheriff is not None:
-            sheriff_info = f"\nSheriff: Player at seat {context.sheriff} holds the sheriff badge (1.5x vote weight)."
-
-        user = f"""=== Night {context.day} - Werewolf Kill Decision ===
-
-YOUR TEAMMATES (fellow werewolves):
-  Seats: {werewolf_teammates if werewolf_teammates else 'None - you are alone!'}
-
-LIVING PLAYERS (potential targets):
-  Seats: {living_players}
-
-DEAD PLAYERS (cannot be targeted):
-  Seats: {dead_players if dead_players else 'None'}{sheriff_info}
-
-Enter the seat number of your target to kill (or -1 to skip):"""
+        # Use LLM format for user prompt (includes choices)
+        user = decision.to_llm_prompt()
 
         return system, user
 
@@ -260,12 +238,21 @@ Enter the seat number of your target to kill (or -1 to skip):"""
     ) -> Optional[Any]:
         """Build ChoiceSpec for interactive TUI.
 
-        Returns ChoiceSpec with valid targets (living players except self).
+        IMPORTANT: Werewolves can target ANY living player, including:
+        - Themselves (suicide)
+        - Their own werewolf teammates (betrayal/chaos strategy)
+
+        This is intentionally different from the LLM prompt which filters teammates
+        for game balance. The game rules are enforced at validation time, not at
+        prompt generation time. This gives werewolves full strategic freedom.
+
+        Returns ChoiceSpec with ALL living players + skip option.
         """
         make_seat_choice = _get_choice_spec_helpers()
 
-        # Build list of valid targets (all living except self)
-        valid_targets = [p for p in sorted(context.living_players) if p != for_seat]
+        # Include ALL living players - werewolves can target anyone including themselves
+        # and teammates. Game rules (not prompt filtering) enforce valid choices.
+        valid_targets = sorted(context.living_players)
 
         return make_seat_choice(
             prompt="Choose a target to kill:",
@@ -301,7 +288,7 @@ Enter the seat number of your target to kill (or -1 to skip):"""
             # Add hint for retry attempts
             hint = None
             if attempt > 0:
-                hint = "Previous response was invalid. Please choose a living player or -1 to skip."
+                hint = "Previous response was invalid. Please choose a living player or SKIP."
 
             raw = await participant.decide(system, user, hint=hint, choices=choices)
 
@@ -318,9 +305,9 @@ Enter the seat number of your target to kill (or -1 to skip):"""
 
             # Provide helpful hint based on what went wrong
             if target in context.dead_players:
-                hint = "That player is dead. Choose a living player or -1 to skip."
+                hint = "That player is dead. Choose a living player or SKIP."
             else:
-                hint = "Invalid choice. Choose a living player or -1 to skip."
+                hint = "Invalid choice. Choose a living player or SKIP."
 
             if attempt == self.max_retries - 1:
                 raise MaxRetriesExceededError(

@@ -3,6 +3,9 @@
 Rules:
 - D.1: Werewolves cannot target dead players
 - D.2: Dead Werewolves cannot participate in night action
+
+Note: Werewolves CAN target themselves or their teammates. This is allowed
+and validated elsewhere (not here) to enable chaos/strategic gameplay.
 """
 
 from werewolf.engine.game_state import GameState
