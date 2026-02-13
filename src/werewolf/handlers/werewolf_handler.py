@@ -5,7 +5,7 @@ choose a target to kill.
 """
 
 from collections import Counter
-from typing import Protocol, Sequence, Optional, Any
+from typing import Sequence, Optional, Any
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +23,7 @@ from werewolf.prompt_levels import (
     build_werewolf_decision,
     DecisionPrompt,
 )
+from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant, MaxRetriesExceededError
 
 
 def _get_choice_spec_helpers():
@@ -31,64 +32,8 @@ def _get_choice_spec_helpers():
     return make_seat_choice
 
 
-# ============================================================================
-# Handler Result Types
-# ============================================================================
-
-
-class SubPhaseLog(BaseModel):
-    """Generic subphase container with events."""
-
-    micro_phase: SubPhase
-    events: list[GameEvent] = Field(default_factory=list)
-
-
-class HandlerResult(BaseModel):
-    """Output from handlers containing all events from a subphase."""
-
-    subphase_log: SubPhaseLog
-    debug_info: Optional[str] = None
-
-
-# ============================================================================
-# Participant Protocol
-# ============================================================================
-
-
 # Forward reference to avoid circular import
 ChoiceSpec = Any  # Will be resolved at runtime
-
-
-class Participant(Protocol):
-    """A player (AI or human) that can make decisions.
-
-    The handler queries participants for their decisions during subphases.
-    Participants return raw strings - handlers are responsible for parsing
-    and validation.
-
-    For interactive TUI play, handlers may provide a ChoiceSpec to guide
-    the participant's decision-making with structured choices.
-    """
-
-    async def decide(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        hint: Optional[str] = None,
-        choices: Optional[Any] = None,
-    ) -> str:
-        """Make a decision and return raw response string.
-
-        Args:
-            system_prompt: System instructions defining the role/constraints
-            user_prompt: User prompt with current game state
-            hint: Optional hint for invalid previous attempts
-            choices: Optional ChoiceSpec for interactive TUI selection
-
-        Returns:
-            Raw response string to be parsed by the handler
-        """
-        ...
 
 
 # ============================================================================
@@ -447,11 +392,6 @@ class WerewolfHandler:
         for seat in sorted(context.living_players):
             return seat  # Any living player is valid (including teammates)
         raise ValueError("No valid targets available")
-
-
-class MaxRetriesExceededError(Exception):
-    """Raised when max retries are exceeded."""
-    pass
 
 
 # ============================================================================

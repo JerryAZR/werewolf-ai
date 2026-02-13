@@ -5,7 +5,7 @@ protect a player for the night.
 """
 
 import re
-from typing import Protocol, Sequence, Optional, Any
+from typing import Sequence, Optional, Any
 from pydantic import BaseModel, Field
 
 from werewolf.events.game_events import (
@@ -21,68 +21,13 @@ from werewolf.prompt_levels import (
     make_guard_context,
     build_guard_decision,
 )
+from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant, MaxRetriesExceededError
 
 
 def _get_choice_spec_helpers():
     """Lazy import to avoid dependency when choices not used."""
     from werewolf.ui.choices import make_seat_choice
     return make_seat_choice
-
-
-# ============================================================================
-# Handler Result Types
-# ============================================================================
-
-
-class SubPhaseLog(BaseModel):
-    """Generic subphase container with events."""
-
-    micro_phase: SubPhase
-    events: list[GameEvent] = Field(default_factory=list)
-
-
-class HandlerResult(BaseModel):
-    """Output from handlers containing all events from a subphase."""
-
-    subphase_log: SubPhaseLog
-    debug_info: Optional[str] = None
-
-
-# ============================================================================
-# Participant Protocol
-# ============================================================================
-
-
-class Participant(Protocol):
-    """A player (AI or human) that can make decisions.
-
-    The handler queries participants for their decisions during subphases.
-    Participants return raw strings - handlers are responsible for parsing
-    and validation.
-
-    For interactive TUI play, handlers may provide a ChoiceSpec to guide
-    the participant's decision-making with structured choices.
-    """
-
-    async def decide(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        hint: Optional[str] = None,
-        choices: Optional[Any] = None,
-    ) -> str:
-        """Make a decision and return raw response string.
-
-        Args:
-            system_prompt: System instructions defining the role/constraints
-            user_prompt: User prompt with current game state
-            hint: Optional hint for invalid previous attempts
-            choices: Optional ChoiceSpec for interactive TUI selection
-
-        Returns:
-            Raw response string to be parsed by the handler
-        """
-        ...
 
 
 # ============================================================================
@@ -461,11 +406,6 @@ class ValidationResult(BaseModel):
     is_valid: bool
     hint: Optional[str] = None
     debug_info: Optional[str] = None
-
-
-class MaxRetriesExceededError(Exception):
-    """Raised when max retries are exceeded."""
-    pass
 
 
 # ============================================================================

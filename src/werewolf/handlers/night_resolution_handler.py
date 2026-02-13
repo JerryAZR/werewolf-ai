@@ -28,6 +28,7 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.models.player import Player
+from werewolf.handlers.base import SubPhaseLog, HandlerResult
 
 
 # ============================================================================
@@ -55,33 +56,6 @@ class NightActionAccumulator(BaseModel):
     guard_target: Optional[int] = None
     antidote_used: bool = False
     poison_used: bool = False
-
-
-# ============================================================================
-# Handler Result Types
-# ============================================================================
-
-
-class SubPhaseLog(BaseModel):
-    """Generic subphase container with events."""
-
-    micro_phase: SubPhase
-    events: list[GameEvent] = Field(default_factory=list)
-
-
-class HandlerResult(BaseModel):
-    """Output from handlers containing all events from a subphase."""
-
-    subphase_log: SubPhaseLog
-    debug_info: Optional[str] = None
-
-
-# ============================================================================
-# Participant Protocol (not used - engine-only logic)
-# ============================================================================
-
-
-# NightResolution is engine-only logic, no participants needed
 
 
 # ============================================================================

@@ -4,7 +4,7 @@ This handler manages the Sheriff election voting subphase where all living
 players cast votes for Sheriff candidates.
 """
 
-from typing import Protocol, Sequence, Optional, Any
+from typing import Sequence, Optional, Any
 from collections import defaultdict
 from pydantic import BaseModel, Field
 
@@ -21,67 +21,7 @@ from werewolf.prompt_levels import (
     make_sheriff_election_context,
     build_sheriff_election_decision,
 )
-
-
-# ============================================================================
-# Handler Result Types
-# ============================================================================
-
-
-class SubPhaseLog(BaseModel):
-    """Generic subphase container with events."""
-
-    micro_phase: SubPhase
-    events: list[GameEvent] = Field(default_factory=list)
-
-
-class HandlerResult(BaseModel):
-    """Output from handlers containing all events from a subphase."""
-
-    subphase_log: SubPhaseLog
-    debug_info: Optional[str] = None
-
-
-# ============================================================================
-# Participant Protocol
-# ============================================================================
-
-
-class Participant(Protocol):
-    """A player (AI or human) that can make decisions.
-
-    The handler queries participants for their decisions during subphases.
-    Participants return raw strings - handlers are responsible for parsing
-    and validation.
-
-    For interactive TUI play, handlers may provide a ChoiceSpec to guide
-    the participant's decision-making with structured choices.
-    """
-
-    async def decide(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        hint: Optional[str] = None,
-        choices: Optional[Any] = None,
-    ) -> str:
-        """Make a decision and return raw response string.
-
-        Args:
-            system_prompt: System instructions defining the role/constraints
-            user_prompt: User prompt with current game state
-            hint: Optional hint for invalid previous attempts
-            choices: Optional ChoiceSpec for interactive TUI selection
-
-        Returns:
-            Raw response string to be parsed by the handler
-        """
-        ...
-
-
-# ============================================================================
-# SheriffElection Handler
-# ============================================================================
+from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant, MaxRetriesExceededError
 
 
 SHERIFF_VOTE_WEIGHT: float = 1.5
@@ -414,11 +354,6 @@ class SheriffElectionHandler:
                 return None
         except (ValueError, AttributeError):
             return None
-
-
-class MaxRetriesExceededError(Exception):
-    """Raised when max retries are exceeded."""
-    pass
 
 
 # ============================================================================
