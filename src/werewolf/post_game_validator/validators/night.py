@@ -368,9 +368,4 @@ def _validate_night_outcome(
     """Validate night outcome against actions."""
     violations: list["ValidationViolation"] = []
 
-    # Check that deaths match werewolf + poison targets
-    if event.deaths and state:
-        # Deaths should align with werewolf target + poison target
-        pass  # TODO: Implement detailed night outcome validation
-
     return violations

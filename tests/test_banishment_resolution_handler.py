@@ -54,6 +54,7 @@ class MockParticipant:
         system_prompt: str,
         user_prompt: str,
         hint: Optional[str] = None,
+        choices: Optional[Any] = None,
     ) -> str:
         self._call_count += 1
         if self._response_iter and self._call_count <= len(self._response_iter):

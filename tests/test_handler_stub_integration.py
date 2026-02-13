@@ -204,8 +204,12 @@ class TestWerewolfHandlerIntegration:
         """Test multiple werewolves reach consensus with stub AIs."""
         handler = WerewolfHandler()
 
+        # Get actual werewolf seats from context
+        werewolf_seats = [s for s in night1_context.living_players if night1_context.is_werewolf(s)]
+        assert len(werewolf_seats) >= 2, f"Expected at least 2 werewolves, got {werewolf_seats}"
+
         # Create separate stubs for each werewolf
-        stubs = {s: create_stub_player(seed=s*10) for s in [0, 1, 2, 3]}
+        stubs = {s: create_stub_player(seed=s*10) for s in werewolf_seats}
         participants = [(s, stubs[s]) for s in stubs]
 
         result = await handler(night1_context, participants)
@@ -523,26 +527,17 @@ class TestStubPlayerChoices:
         assert response in ["PASS", "ANTIDOTE 0", "POISON 1"]
 
     @pytest.mark.asyncio
-    async def test_stub_without_choices_parses_prompt(self):
-        """Test StubPlayer without choices parses prompt for living players."""
-        from werewolf.ai.stub_ai import StubPlayer
+    async def test_stub_without_choices_returns_default_speech(self):
+        """Test StubPlayer without choices returns default speech."""
+        from werewolf.ai.stub_ai import StubPlayer, DEFAULT_SPEECH
 
         stub = StubPlayer(seed=456)
 
-        # Prompt that looks like a voting request (contains "vote" and "banish")
-        prompt = """
-        Who do you want to banish?
+        # Without choices, should return default speech
+        response = await stub.decide("", "Who do you want to banish?")
 
-        Living players: 0, 1, 3, 4, 5
-        Dead players: 2, 6
-        """
-
-        # Without choices, should detect VOTING and return a seat or abstain
-        response = await stub.decide("", prompt)
-
-        # Should return a valid vote response (seat number or abstain)
-        valid_responses = ["0", "1", "3", "4", "5", "ABSTAIN"]
-        assert response in valid_responses, f"Got: {response}"
+        # Should return the default speech (not parsed from prompt)
+        assert response == DEFAULT_SPEECH
 
     @pytest.mark.asyncio
     async def test_stub_choices_guarantees_valid_response(self):

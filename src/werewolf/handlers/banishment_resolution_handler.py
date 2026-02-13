@@ -534,24 +534,22 @@ class BanishmentResolutionHandler:
         )
 
         for attempt in range(self.max_retries):
-            try:
-                response = await participant.decide(system, user, choices=choices)
-                target = self._parse_hunter_shoot_response(response, context, hunter_seat)
-                if target is not None:
-                    return target
-            except Exception:
-                pass
+            response = await participant.decide(system, user, choices=choices)
+            target = self._parse_hunter_shoot_response(response, context, hunter_seat)
+            if target is None:
+                return None  # User chose to skip
+            if target != 'RETRY':
+                return target
 
             hint = "Please enter a valid seat number or SKIP."
-            try:
-                response = await participant.decide(system, user, hint=hint, choices=choices)
-                target = self._parse_hunter_shoot_response(response, context, hunter_seat)
-                if target is not None:
-                    return target
-            except Exception:
-                break
+            response = await participant.decide(system, user, hint=hint, choices=choices)
+            target = self._parse_hunter_shoot_response(response, context, hunter_seat)
+            if target is None:
+                return None  # User chose to skip
+            if target != 'RETRY':
+                return target
 
-        return None
+        raise ValueError(f"Hunter {hunter_seat} failed to provide valid shoot target after {self.max_retries} attempts")
 
     def _parse_hunter_shoot_response(
         self,
@@ -559,11 +557,17 @@ class BanishmentResolutionHandler:
         context: "PhaseContext",
         hunter_seat: int,
     ) -> Optional[int]:
-        """Parse hunter shoot response."""
+        """Parse hunter shoot response.
+
+        Returns:
+            - None: User explicitly chose to skip (SKIP, NONE, -1, PASS)
+            - int: Target seat to shoot
+            - 'RETRY': Response was invalid, need to retry
+        """
         response = response.strip()
 
         if response.upper() in ("SKIP", "NONE", "-1", "PASS"):
-            return None
+            return None  # Explicit skip
 
         try:
             target = int(response)
@@ -573,7 +577,7 @@ class BanishmentResolutionHandler:
         except ValueError:
             pass
 
-        return None
+        return 'RETRY'  # Invalid response, should retry
 
     def _choose_hunter_shoot_target(
         self,
@@ -660,6 +664,13 @@ class BanishmentResolutionHandler:
         """Query sheriff for badge transfer with retries."""
         living_players = sorted(context.living_players - {sheriff_seat})
 
+        # Build choices for badge transfer
+        choices = make_seat_choice(
+            prompt="Choose who to pass the badge to (or Skip):",
+            seats=living_players,
+            allow_none=True,  # Sheriff can skip
+        )
+
         # Identify trusted players for hint
         trusted = [s for s in living_players if not context.is_werewolf(s)]
         trusted_hint = f"Trusted players: {trusted}" if trusted else "No known trusted players."
@@ -672,24 +683,22 @@ class BanishmentResolutionHandler:
         )
 
         for attempt in range(self.max_retries):
-            try:
-                response = await participant.decide(system, user)
-                target = self._parse_badge_transfer_response(response, context, sheriff_seat)
-                if target is not None:
-                    return target
-            except Exception:
-                pass
+            response = await participant.decide(system, user, choices=choices)
+            target = self._parse_badge_transfer_response(response, context, sheriff_seat)
+            if target is None:
+                return None  # User chose to skip
+            if target != 'RETRY':
+                return target
 
             hint = "Please enter a valid seat number or SKIP."
-            try:
-                response = await participant.decide(system, user, hint)
-                target = self._parse_badge_transfer_response(response, context, sheriff_seat)
-                if target is not None:
-                    return target
-            except Exception:
-                break
+            response = await participant.decide(system, user, hint=hint, choices=choices)
+            target = self._parse_badge_transfer_response(response, context, sheriff_seat)
+            if target is None:
+                return None  # User chose to skip
+            if target != 'RETRY':
+                return target
 
-        return None
+        raise ValueError(f"Sheriff {sheriff_seat} failed to provide valid badge transfer target after {self.max_retries} attempts")
 
     def _parse_badge_transfer_response(
         self,
@@ -697,11 +706,17 @@ class BanishmentResolutionHandler:
         context: "PhaseContext",
         sheriff_seat: int,
     ) -> Optional[int]:
-        """Parse badge transfer response."""
+        """Parse badge transfer response.
+
+        Returns:
+            - None: User explicitly chose to skip (SKIP, NONE, -1, PASS)
+            - int: Target seat for badge transfer
+            - 'RETRY': Response was invalid, need to retry
+        """
         response = response.strip()
 
         if response.upper() in ("SKIP", "NONE", "-1", "PASS"):
-            return None
+            return None  # Explicit skip
 
         try:
             target = int(response)
@@ -711,7 +726,7 @@ class BanishmentResolutionHandler:
         except ValueError:
             pass
 
-        return None
+        return 'RETRY'  # Invalid response, should retry
 
     def _choose_badge_heir(
         self,

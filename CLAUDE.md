@@ -19,7 +19,10 @@ uv run pytest tests/test_file.py        # Single test file
 uv run pytest tests/test_file.py::test_name  # Specific test
 
 # Run the game
-uv run python main.py
+uv run werewolf                           # Single human player with Textual UI
+uv run werewolf --seed 42                 # Reproducible game with seed
+uv run werewolf --ai                      # Watch AI vs AI simulation
+uv run werewolf --validate --games 100    # Stress test with validators
 ```
 
 ## Architecture

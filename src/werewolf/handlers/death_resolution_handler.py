@@ -545,26 +545,23 @@ class DeathResolutionHandler:
 
         # Query participant with retries
         for attempt in range(self.max_retries):
-            try:
-                response = await participant.decide(system, user, choices=choices)
-                target = self._parse_hunter_shoot_response(response, context, seat)
-                if target is not None:
-                    return target
-            except Exception:
-                pass
+            response = await participant.decide(system, user, choices=choices)
+            target = self._parse_hunter_shoot_response(response, context, seat)
+            if target is None:
+                return None  # User chose to skip
+            if target != 'RETRY':
+                return target
 
             # Provide hint on retry
             hint = "Please enter a valid seat number or SKIP."
-            try:
-                response = await participant.decide(system, user, hint=hint, choices=choices)
-                target = self._parse_hunter_shoot_response(response, context, seat)
-                if target is not None:
-                    return target
-            except Exception:
-                break
+            response = await participant.decide(system, user, hint=hint, choices=choices)
+            target = self._parse_hunter_shoot_response(response, context, seat)
+            if target is None:
+                return None  # User chose to skip
+            if target != 'RETRY':
+                return target
 
-        # Fallback to template
-        return self._choose_hunter_shoot_target(context, seat)
+        raise ValueError(f"Hunter {seat} failed to provide valid shoot target after {self.max_retries} attempts")
 
     def _build_hunter_shoot_prompts(
         self,
@@ -630,13 +627,15 @@ class DeathResolutionHandler:
             hunter_seat: Hunter's seat
 
         Returns:
-            Valid target seat or None
+            - None: User explicitly chose to skip (SKIP, NONE, -1, PASS)
+            - int: Target seat to shoot
+            - 'RETRY': Response was invalid, need to retry
         """
         response = response.strip()
 
         # Handle SKIP variants
         if response.upper() in ("SKIP", "NONE", "-1", "PASS"):
-            return None
+            return None  # Explicit skip
 
         # Try to parse as seat number
         try:
@@ -647,7 +646,7 @@ class DeathResolutionHandler:
         except ValueError:
             pass
 
-        return None
+        return 'RETRY'  # Invalid response, should retry
 
     def _choose_hunter_shoot_target(
         self,
@@ -718,26 +717,23 @@ class DeathResolutionHandler:
 
         # Query participant with retries
         for attempt in range(self.max_retries):
-            try:
-                response = await participant.decide(system, user, choices=choices)
-                target = self._parse_badge_transfer_response(response, context, seat)
-                if target is not None:
-                    return target
-            except Exception:
-                pass
+            response = await participant.decide(system, user, choices=choices)
+            target = self._parse_badge_transfer_response(response, context, seat)
+            if target is None:
+                return None  # User chose to skip
+            if target != 'RETRY':
+                return target
 
             # Provide hint on retry
             hint = "Please enter a valid seat number or SKIP."
-            try:
-                response = await participant.decide(system, user, hint=hint, choices=choices)
-                target = self._parse_badge_transfer_response(response, context, seat)
-                if target is not None:
-                    return target
-            except Exception:
-                break
+            response = await participant.decide(system, user, hint=hint, choices=choices)
+            target = self._parse_badge_transfer_response(response, context, seat)
+            if target is None:
+                return None  # User chose to skip
+            if target != 'RETRY':
+                return target
 
-        # Fallback to template
-        return self._choose_badge_heir(context, seat)
+        raise ValueError(f"Sheriff {seat} failed to provide valid badge transfer target after {self.max_retries} attempts")
 
     def _build_badge_transfer_choices(self, context: "PhaseContext", sheriff_seat: int) -> ChoiceSpec:
         """Build ChoiceSpec for badge transfer.
@@ -803,13 +799,15 @@ class DeathResolutionHandler:
             sheriff_seat: Sheriff's seat
 
         Returns:
-            Valid heir seat or None
+            - None: User explicitly chose to skip (SKIP, NONE, -1, PASS)
+            - int: Valid heir seat
+            - 'RETRY': Response was invalid, need to retry
         """
         response = response.strip()
 
         # Handle SKIP variants
         if response.upper() in ("SKIP", "NONE", "-1", "PASS"):
-            return None
+            return None  # Explicit skip
 
         # Try to parse as seat number
         try:
@@ -820,7 +818,7 @@ class DeathResolutionHandler:
         except ValueError:
             pass
 
-        return None
+        return 'RETRY'  # Invalid response, should retry
 
     def _choose_badge_heir(
         self,

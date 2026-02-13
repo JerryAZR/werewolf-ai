@@ -18,8 +18,8 @@ from werewolf.models.player import Player, Role
 
 # Lazy import for ChoiceSpec to avoid circular imports
 def _get_choice_spec():
-    from werewolf.ui.choices import ChoiceSpec, make_action_choice, make_seat_choice
-    return ChoiceSpec, make_action_choice, make_seat_choice
+    from werewolf.ui.choices import ChoiceSpec, ChoiceOption, make_action_choice, make_seat_choice
+    return ChoiceSpec, ChoiceOption, make_action_choice, make_seat_choice
 
 
 # ============================================================================
@@ -302,65 +302,49 @@ Enter your action (e.g., "PASS", "ANTIDOTE 7", or "POISON 3"):"""
     ) -> Optional[Any]:
         """Build ChoiceSpec for interactive TUI.
 
-        Returns None if not enough info to build choices.
+        Returns a flat ChoiceSpec with all valid witch actions as string values:
+        - "PASS" - do nothing
+        - "ANTIDOTE {seat}" - save werewolf target
+        - "POISON {seat}" - kill a player
         """
-        ChoiceSpec, make_action_choice, make_seat_choice = _get_choice_spec()
+        ChoiceSpec, ChoiceOption, _, _ = _get_choice_spec()
 
-        # Determine available actions
         antidote_available = not night_actions.antidote_used
         poison_available = not night_actions.poison_used
         kill_target = night_actions.kill_target
 
-        living_players_sorted = [p for p in sorted(context.living_players) if p != witch_seat]
+        # Build all valid action options as flat strings
+        options = []
 
-        # Build action choices
-        actions = [("PASS", "Pass (do nothing)")]
+        # PASS is always available
+        options.append(ChoiceOption(value="PASS", display="Pass (do nothing)"))
 
-        # Build target choices based on available potions
-        target_info = {}
-
+        # ANTIDOTE: only valid if available, has kill target, not targeting self
         if antidote_available and kill_target is not None and kill_target != witch_seat:
-            actions.append(("ANTIDOTE", "Antidote (save werewolf target)"))
-            target_info[kill_target] = "Werewolf Target"
+            options.append(ChoiceOption(
+                value=f"ANTIDOTE {kill_target}",
+                display=f"Antidote (save player {kill_target})"
+            ))
 
+        # POISON: can target any living player except self
         if poison_available:
-            actions.append(("POISON", "Poison (kill a player)"))
-            for seat in living_players_sorted:
+            for seat in sorted(context.living_players):
+                if seat == witch_seat:
+                    continue
                 player = context.get_player(seat)
                 if player:
-                    target_info[seat] = player.role.value
+                    options.append(ChoiceOption(
+                        value=f"POISON {seat}",
+                        display=f"Poison (kill player {seat} - {player.role.value})"
+                    ))
 
-        # If only PASS available, no need for choice spec
-        if len(actions) == 1:
-            return None
-
-        action_choice = make_action_choice(
+        return ChoiceSpec(
+            choice_type="single",  # type: ignore
             prompt="Choose your action:",
-            actions=actions,
-            allow_none=False,  # User must pick an action
+            options=options,
+            allow_none=False,
+            none_display="Pass / Skip",
         )
-
-        # If action requires target, we can't fully specify in one prompt
-        # Return special marker that handler will use for two-stage prompt
-        if (("ANTIDOTE" in [a[0] for a in actions]) or
-            ("POISON" in [a[0] for a in actions])):
-            # Return a dict that the handler can interpret
-            return {
-                "type": "witch_action",
-                "action_choices": action_choice,
-                "target_choices": make_seat_choice(
-                    prompt="Select target:",
-                    seats=list(target_info.keys()),
-                    seat_info=target_info,
-                    allow_none=False,
-                ),
-                "kill_target": kill_target,
-                "poison_available": poison_available,
-                "antidote_available": antidote_available,
-                "witch_seat": witch_seat,
-            }
-
-        return action_choice
 
     async def _get_valid_action(
         self,
