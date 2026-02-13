@@ -14,9 +14,12 @@ Usage:
 """
 
 import asyncio
+import json
+import os
 import random
 import statistics
 from collections import Counter
+from datetime import datetime
 from typing import Optional
 
 import pytest
@@ -24,13 +27,122 @@ import pytest
 from werewolf.models import Player, Role, STANDARD_12_PLAYER_CONFIG, create_players_from_config
 from werewolf.engine import WerewolfGame, CollectingValidator
 from werewolf.ai.stub_ai import create_stub_player
-from werewolf.events import GameOver, VictoryCondition
+from werewolf.events import GameOver, VictoryCondition, Phase
 from werewolf.post_game_validator import PostGameValidator
 
 
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+def get_ending_phase(event_log) -> tuple[Phase, int] | None:
+    """Get the phase when the game ended.
+
+    Returns:
+        Tuple of (Phase.NIGHT or Phase.DAY, phase number) or None if no phases.
+    """
+    if not event_log.phases:
+        return None
+    last_phase = event_log.phases[-1]
+    return (last_phase.kind, last_phase.number)
+
+
+def check_early_game_ending(event_log) -> str | None:
+    """Check if game ended suspiciously early.
+
+    Returns:
+        "definitely_wrong" if night 1 (impossible)
+        "probably_wrong" if day 1 or night 2
+        None if game length is reasonable
+    """
+    ending = get_ending_phase(event_log)
+    if ending is None:
+        return "definitely_wrong"  # No phases at all
+
+    phase_kind, phase_num = ending
+
+    # Night 1 ending is definitely wrong - game must have at least one full night + day cycle
+    if phase_kind == Phase.NIGHT and phase_num == 1:
+        return "definitely_wrong"
+
+    # Day 1 or Night 2 ending is probably wrong - flag for inspection
+    if phase_kind == Phase.DAY and phase_num == 1:
+        return "probably_wrong"
+    if phase_kind == Phase.NIGHT and phase_num == 2:
+        return "probably_wrong"
+
+    return None
+
+
+def check_early_game_ending_from_result(ending_phase: tuple[Phase, int] | None, days: int) -> str | None:
+    """Check if game ended suspiciously early from result data.
+
+    Args:
+        ending_phase: Tuple of (Phase.NIGHT or Phase.DAY, phase number)
+        days: Final turn count from game_over
+
+    Returns:
+        "definitely_wrong" if night 1 (impossible)
+        "probably_wrong" if day 1 or night 2
+        None if game length is reasonable
+    """
+    if ending_phase is None:
+        return "definitely_wrong"  # No phases at all
+
+    phase_kind, phase_num = ending_phase
+
+    # Night 1 ending is definitely wrong
+    if phase_kind == Phase.NIGHT and phase_num == 1:
+        return "definitely_wrong"
+
+    # Day 1 or Night 2 ending is probably wrong
+    if phase_kind == Phase.DAY and phase_num == 1:
+        return "probably_wrong"
+    if phase_kind == Phase.NIGHT and phase_num == 2:
+        return "probably_wrong"
+
+    return None
+
+
+# Path to store suspicious early ending logs
+EARLY_ENDINGS_LOG = "test_outputs/early_endings.log"
+
+
+def dump_early_endings(
+    definitely_wrong: list,
+    probably_wrong: list,
+    log_path: str = EARLY_ENDINGS_LOG,
+):
+    """Dump suspicious early endings to a log file for inspection.
+
+    Args:
+        definitely_wrong: List of (seed, ending_phase, days) tuples for impossible endings
+        probably_wrong: List of (seed, ending_phase, days) tuples for suspicious endings
+        log_path: Path to the log file
+    """
+    if not definitely_wrong and not probably_wrong:
+        return
+
+    # Create output directory if needed
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+    # Build log entry
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "definitely_wrong": [
+            {"seed": seed, "phase": str(phase), "days": days}
+            for seed, phase, days in definitely_wrong
+        ],
+        "probably_wrong": [
+            {"seed": seed, "phase": str(phase), "days": days}
+            for seed, phase, days in probably_wrong
+        ],
+    }
+
+    # Append to log file
+    with open(log_path, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
 
 def create_players_from_config_shuffled(seed: int | None = None) -> dict[int, Player]:
     """Create a dict of players with shuffled roles from standard config.
@@ -133,15 +245,24 @@ class TestStressTest:
         games_failed = 0
         victory_conditions = Counter()
         days_distribution = []
+        early_endings_definitely_wrong = []  # Night 1 endings (impossible)
+        early_endings_probably_wrong = []    # Day 1 or Night 2 endings (suspicious)
 
         for result in results:
             if isinstance(result, Exception):
                 games_failed += 1
                 pytest.fail(f"Game raised exception: {result}")
             else:
-                game_seed, winner, in_game_violations, post_game_violations, game_over, days = result
+                game_seed, winner, in_game_violations, post_game_violations, game_over, days, ending_phase = result
                 games_completed += 1
                 winners.append(winner)
+
+                # Check for early game endings
+                early_check = check_early_game_ending_from_result(ending_phase, days)
+                if early_check == "definitely_wrong":
+                    early_endings_definitely_wrong.append((game_seed, ending_phase, days))
+                elif early_check == "probably_wrong":
+                    early_endings_probably_wrong.append((game_seed, ending_phase, days))
 
                 # Track in-game violations by rule
                 for v in in_game_violations:
@@ -169,6 +290,8 @@ class TestStressTest:
             post_game_violations_by_rule=post_game_violations_by_rule,
             victory_conditions=victory_conditions,
             days_distribution=days_distribution,
+            early_endings_definitely_wrong=early_endings_definitely_wrong,
+            early_endings_probably_wrong=early_endings_probably_wrong,
         )
 
         # Assertions
@@ -195,12 +318,35 @@ class TestStressTest:
                 f"Found {sum(post_game_violations_by_rule.values())} post-game validation violations:\n{violation_msgs}"
             )
 
+        # Fail on definitely wrong endings (night 1 - impossible)
+        if early_endings_definitely_wrong:
+            details = "\n".join(
+                f"  Seed {seed}: {phase}, day {days}"
+                for seed, phase, days in early_endings_definitely_wrong
+            )
+            pytest.fail(
+                f"Found {len(early_endings_definitely_wrong)} games ending on night 1 (impossible):\n{details}"
+            )
+
+        # Dump early endings to log file for inspection
+        dump_early_endings(early_endings_definitely_wrong, early_endings_probably_wrong)
+
+        # Warn about probably wrong endings (day 1 or night 2)
+        if early_endings_probably_wrong:
+            details = "\n".join(
+                f"  Seed {seed}: {phase}, day {days}"
+                for seed, phase, days in early_endings_probably_wrong
+            )
+            print(f"\nWARNING: {len(early_endings_probably_wrong)} games ended suspiciously early (day 1/night 2):")
+            print(details)
+            print("  (These should be investigated)")
+
         # Verify reasonable winner distribution (both sides should win)
         winner_counts = Counter(winners)
         assert "WEREWOLF" in winner_counts, "No werewolf victories observed"
         assert "VILLAGER" in winner_counts, "No villager victories observed"
 
-        print(f"\n✓ Stress test passed: {num_games} games completed successfully")
+        print(f"\n[OK] Stress test passed: {num_games} games completed successfully")
 
     @pytest.mark.asyncio
     async def test_2000_parallel_games(self, standard_players: dict[int, Player]):
@@ -242,15 +388,24 @@ class TestStressTest:
         games_failed = 0
         victory_conditions = Counter()
         days_distribution = []
+        early_endings_definitely_wrong = []  # Night 1 endings (impossible)
+        early_endings_probably_wrong = []    # Day 1 or Night 2 endings (suspicious)
 
         for result in results:
             if isinstance(result, Exception):
                 games_failed += 1
                 pytest.fail(f"Game raised exception: {result}")
             else:
-                game_seed, winner, in_game_violations, post_game_violations, game_over, days = result
+                game_seed, winner, in_game_violations, post_game_violations, game_over, days, ending_phase = result
                 games_completed += 1
                 winners.append(winner)
+
+                # Check for early game endings
+                early_check = check_early_game_ending_from_result(ending_phase, days)
+                if early_check == "definitely_wrong":
+                    early_endings_definitely_wrong.append((game_seed, ending_phase, days))
+                elif early_check == "probably_wrong":
+                    early_endings_probably_wrong.append((game_seed, ending_phase, days))
 
                 # Track in-game violations by rule
                 for v in in_game_violations:
@@ -278,6 +433,8 @@ class TestStressTest:
             post_game_violations_by_rule=post_game_violations_by_rule,
             victory_conditions=victory_conditions,
             days_distribution=days_distribution,
+            early_endings_definitely_wrong=early_endings_definitely_wrong,
+            early_endings_probably_wrong=early_endings_probably_wrong,
         )
 
         # Assertions
@@ -288,10 +445,33 @@ class TestStressTest:
         assert len(in_game_violations_by_rule) == 0, \
             f"Found {sum(in_game_violations_by_rule.values())} in-game violations"
 
+        # Fail on definitely wrong endings (night 1 - impossible)
+        if early_endings_definitely_wrong:
+            details = "\n".join(
+                f"  Seed {seed}: {phase}, day {days}"
+                for seed, phase, days in early_endings_definitely_wrong
+            )
+            pytest.fail(
+                f"Found {len(early_endings_definitely_wrong)} games ending on night 1 (impossible):\n{details}"
+            )
+
+        # Dump early endings to log file for inspection
+        dump_early_endings(early_endings_definitely_wrong, early_endings_probably_wrong)
+
+        # Warn about probably wrong endings (day 1 or night 2)
+        if early_endings_probably_wrong:
+            details = "\n".join(
+                f"  Seed {seed}: {phase}, day {days}"
+                for seed, phase, days in early_endings_probably_wrong
+            )
+            print(f"\nWARNING: {len(early_endings_probably_wrong)} games ended suspiciously early (day 1/night 2):")
+            print(details)
+            print("  (These should be investigated)")
+
         # Post-game violations are reported but don't fail the test
         # These represent potential game bugs or edge cases that need investigation
         if post_game_violations_by_rule:
-            print(f"\n⚠ Post-game validator found {sum(post_game_violations_by_rule.values())} issues:")
+            print(f"\nWARNING: Post-game validator found {sum(post_game_violations_by_rule.values())} issues:")
             for rule_id, count in sorted(post_game_violations_by_rule.items()):
                 print(f"  {rule_id}: {count} occurrences")
             print("  (These represent edge cases for investigation)")
@@ -305,7 +485,7 @@ class TestStressTest:
         assert "WEREWOLF" in winner_counts, "No werewolf victories observed"
         assert "VILLAGER" in winner_counts, "No villager victories observed"
 
-        print(f"\n✓ 2000-game stress test passed: {games_completed} games completed successfully")
+        print(f"\n[OK] 2000-game stress test passed: {games_completed} games completed successfully")
         print(f"  Winner distribution: WEREWOLF {werewolf_pct:.1f}%, VILLAGER {villager_pct:.1f}%")
 
     @pytest.mark.asyncio
@@ -354,14 +534,14 @@ class TestStressTest:
 
         # Report
         if deviations:
-            print("\n⚠ Determinism deviations found:")
+            print("\nWARNING: Determinism deviations found:")
             for d in deviations:
                 print(f"  Seed {d['seed']}:")
                 print(f"    Run 1: {d['run1']}")
                 print(f"    Run 2: {d['run2']}")
             pytest.fail(f"{len(deviations)} seeds showed non-deterministic behavior")
         else:
-            print(f"\n✓ Determinism verified: {len(test_seeds)} seeds produce identical results")
+            print(f"\n[OK] Determinism verified: {len(test_seeds)} seeds produce identical results")
 
     @pytest.mark.asyncio
     async def test_edge_case_victory_paths(self, standard_players: dict[int, Player]):
@@ -401,10 +581,10 @@ class TestStressTest:
         print(f"Victory conditions required: {conditions_required}")
 
         if missing:
-            print(f"⚠ Missing conditions in 20-game sample: {missing}")
+            print(f"WARNING: Missing conditions in 20-game sample: {missing}")
             print("  (This may happen with random seeds - not a failure)")
         else:
-            print(f"✓ All victory conditions triggered in sample")
+            print(f"[OK] All victory conditions triggered in sample")
 
     @pytest.mark.asyncio
     async def test_validator_rule_coverage(self, standard_players: dict[int, Player]):
@@ -469,8 +649,9 @@ class TestStressTest:
 
         game_over = event_log.game_over
         days = game_over.final_turn_count if game_over else 0
+        ending_phase = get_ending_phase(event_log)
 
-        return (seed, winner, in_game_violations, post_game_violations, game_over, days)
+        return (seed, winner, in_game_violations, post_game_violations, game_over, days, ending_phase)
 
     def _print_stress_report(
         self,
@@ -482,8 +663,15 @@ class TestStressTest:
         post_game_violations_by_rule: Counter,
         victory_conditions: Counter,
         days_distribution: list[int],
+        early_endings_definitely_wrong: list = None,
+        early_endings_probably_wrong: list = None,
     ):
         """Print formatted stress test report."""
+        if early_endings_definitely_wrong is None:
+            early_endings_definitely_wrong = []
+        if early_endings_probably_wrong is None:
+            early_endings_probably_wrong = []
+
         print("\n" + "=" * 60)
         print("STRESS TEST REPORT")
         print("=" * 60)
@@ -514,6 +702,14 @@ class TestStressTest:
             print(f"  Average: {avg_days:.1f}")
             print(f"  Median: {median_days:.1f}")
             print(f"  Range: {min_days} - {max_days}")
+
+        # Early game endings
+        if early_endings_definitely_wrong or early_endings_probably_wrong:
+            print(f"\nEarly Game Endings:")
+            if early_endings_definitely_wrong:
+                print(f"  Night 1 (impossible): {len(early_endings_definitely_wrong)}")
+            if early_endings_probably_wrong:
+                print(f"  Day 1 / Night 2 (suspicious): {len(early_endings_probably_wrong)}")
 
         # In-game validation violations
         print(f"\nIn-Game Validation Violations:")
@@ -565,15 +761,21 @@ class TestStressTestSmall:
         winners = []
         in_game_violations = []
         post_game_violations = []
+        early_endings = []
 
         for result in results:
             if isinstance(result, Exception):
                 pytest.fail(f"Game raised exception: {result}")
             else:
-                seed, winner, violations, post_violations, _, _ = result
+                seed, winner, violations, post_violations, game_over, days, ending_phase = result
                 winners.append(winner)
                 in_game_violations.extend(violations)
                 post_game_violations.extend(post_violations)
+
+                # Check for early game endings
+                early_check = check_early_game_ending_from_result(ending_phase, days)
+                if early_check:
+                    early_endings.append((seed, early_check, ending_phase, days))
 
         # Quick assertions - note: small sample may not have both winners
         assert len(winners) == num_games
@@ -584,8 +786,35 @@ class TestStressTestSmall:
             rule_ids = [v.rule_id for v in in_game_violations]
             pytest.fail(f"Found {len(in_game_violations)} in-game violations: {rule_ids}")
 
+        # Fail on definitely wrong endings (night 1 - impossible)
+        definitely_wrong = [e for e in early_endings if e[1] == "definitely_wrong"]
+        if definitely_wrong:
+            details = "\n".join(
+                f"  Seed {seed}: {phase}, day {days}"
+                for seed, _, phase, days in definitely_wrong
+            )
+            pytest.fail(
+                f"Found {len(definitely_wrong)} games ending on night 1 (impossible):\n{details}"
+            )
+
+        # Warn about probably wrong endings (day 1 or night 2)
+        probably_wrong = [e for e in early_endings if e[1] == "probably_wrong"]
+        if probably_wrong:
+            details = "\n".join(
+                f"  Seed {seed}: {phase}, day {days}"
+                for seed, _, phase, days in probably_wrong
+            )
+            print(f"\nWARNING: {len(probably_wrong)} games ended suspiciously early (day 1/night 2):")
+            print(details)
+
+        # Dump early endings to log file for inspection
+        # Convert format: (seed, check_type, phase, days) -> (seed, phase, days)
+        dump_definitely = [(e[0], e[2], e[3]) for e in early_endings if e[1] == "definitely_wrong"]
+        dump_probably = [(e[0], e[2], e[3]) for e in early_endings if e[1] == "probably_wrong"]
+        dump_early_endings(dump_definitely, dump_probably)
+
         if post_game_violations:
-            print(f"\n⚠ Post-game validator found {len(post_game_violations)} issues:")
+            print(f"\nWARNING: Post-game validator found {len(post_game_violations)} issues:")
             counts = {}
             for v in post_game_violations:
                 counts[v.rule_id] = counts.get(v.rule_id, 0) + 1
@@ -593,7 +822,7 @@ class TestStressTestSmall:
                 print(f"  {rule_id}: {count}")
             print("  (These represent edge cases for investigation)")
 
-        print(f"\n✓ Quick stress test passed: {num_games}/10 games valid")
+        print(f"\n[OK] Quick stress test passed: {num_games}/10 games valid")
         print(f"  Winners: {dict(Counter(winners))}")
 
     async def _run_single_game(
@@ -613,7 +842,11 @@ class TestStressTestSmall:
         post_game_result = post_game_validator.validate()
         post_game_violations = post_game_result.violations
 
-        return (seed, winner, in_game_violations, post_game_violations, event_log.game_over, 0)
+        game_over = event_log.game_over
+        days = game_over.final_turn_count if game_over else 0
+        ending_phase = get_ending_phase(event_log)
+
+        return (seed, winner, in_game_violations, post_game_violations, game_over, days, ending_phase)
 
 
 # ============================================================================
