@@ -2,112 +2,34 @@
 """Playable Werewolf game with human vs AI opponents.
 
 Usage:
-    werewolf                           # Interactive: human chooses seat
+    werewolf                           # Single human player (random seat) with Textual UI
     werewolf --seed 42                 # Reproducible game with seed
-    werewolf --watch                   # Watch AI vs AI simulation
-    werewolf --human-seats 0,1,2       # Multi-human game
+    werewolf --ai                      # Watch AI vs AI simulation
     werewolf --validate --games 100    # Stress test with validators
 """
 
 import argparse
 import asyncio
 import random
+import sys
+
+# Enable Windows console colors
+if sys.platform == "win32":
+    import colorama
+    colorama.init()
+
 import statistics
 from collections import Counter
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt
-from rich.table import Table
 
-from werewolf.models import Player, Role, create_players_from_config
+from werewolf.models import Player, create_players_from_config
 from werewolf.engine import WerewolfGame, CollectingValidator
 from werewolf.engine.validator import GameValidator
 from werewolf.ai.stub_ai import create_stub_player
-from werewolf.ui.interactive import InteractiveParticipant
 from werewolf.post_game_validator import PostGameValidator
-
-
-def display_seat_selection(console: Console) -> int:
-    """Display seat selection screen and return chosen seat."""
-    console.print(Panel(
-        "[bold yellow]WEREWOLF - Seat Selection[/bold yellow]\n\n"
-        "Choose your seat (0-11) to join the game.\n"
-        "Your role will be revealed after selection.",
-        title="Werewolf AI",
-        style="cyan"
-    ))
-
-    table = Table(title="Available Seats")
-    table.add_column("Seat", justify="center")
-    table.add_column("Status", justify="center")
-
-    for seat in range(12):
-        table.add_row(str(seat), "AI")
-
-    console.print(table)
-
-    while True:
-        try:
-            seat = Prompt.ask(
-                "\n[bold]Enter your seat number (0-11)[/bold]",
-                default="0",
-                show_default=True
-            )
-            seat = int(seat.strip())
-            if 0 <= seat <= 11:
-                return seat
-            console.print(f"[red]Please enter a number between 0 and 11[/red]")
-        except (ValueError, KeyboardInterrupt):
-            console.print(f"\n[red]Invalid input, please try again[/red]")
-
-
-def reveal_role(console: Console, seat: int, role: Role) -> None:
-    """Reveal the player's role."""
-    role_descriptions = {
-        Role.WEREWOLF: "WEREWOLF - Kill all villagers to win!",
-        Role.SEER: "SEER - Check one player's identity each night",
-        Role.WITCH: "WITCH - One antidote (save someone) and one poison (kill someone)",
-        Role.HUNTER: "HUNTER - Shoot someone when you die",
-        Role.GUARD: "GUARD - Protect one player from werewolves each night",
-        Role.ORDINARY_VILLAGER: "ORDINARY VILLAGER - Help find and banish werewolves",
-        Role.VILLAGER: "VILLAGER - Help find and banish werewolves",
-    }
-    description = role_descriptions.get(role, role.value)
-
-    console.print(Panel(
-        f"[bold green]Your Role:[/bold green] [bold]{role.value}[/bold]\n\n"
-        f"{description}\n\n"
-        f"Seat: {seat}\n\n"
-        f"[dim]Keep your identity secret! Don't reveal your role during the game.[/dim]",
-        title="Role Revealed",
-        style="green"
-    ))
-
-
-def display_game_over(console: Console, winner: str, your_role: Role) -> None:
-    """Display game over screen."""
-    if winner == "WEREWOLF":
-        if your_role == Role.WEREWOLF:
-            result = "VICTORY! You are the werewolf champion!"
-            style = "green"
-        else:
-            result = "DEFEAT! The werewolves won."
-            style = "red"
-    else:
-        if your_role == Role.WEREWOLF:
-            result = "DEFEAT! The villagers won."
-            style = "red"
-        else:
-            result = "VICTORY! You helped save the village!"
-            style = "green"
-
-    console.print(Panel(
-        f"[bold {style}]{result}[/bold {style}]\n\n"
-        f"Winner: {winner}",
-        title="Game Over",
-        style=style
-    ))
+from werewolf.ui.textual_game import WerewolfUI
 
 
 def create_players(seed: int) -> dict[int, Player]:
@@ -126,58 +48,9 @@ def create_players(seed: int) -> dict[int, Player]:
     return players
 
 
-async def run_playable_game(
-    seed: int,
-    human_seats: set[int],
-    validator: GameValidator | None = None,
-) -> None:
-    """Run a game with human player(s)."""
-    console = Console()
-
-    # Create players
-    players = create_players(seed)
-
-    # Show roles for human players
-    for seat in human_seats:
-        human_role = players[seat].role
-        reveal_role(console, seat, human_role)
-
-    # Create participants
-    participants = {}
-
-    for seat, player in players.items():
-        if seat in human_seats:
-            # Human participant
-            participants[seat] = InteractiveParticipant()
-        else:
-            # AI participant
-            participants[seat] = create_stub_player(seed=seed + seat)
-
-    # Run game
-    console.print(f"\n[bold]Starting game with seed {seed}...[/bold]\n")
-
-    game = WerewolfGame(
-        players=players,
-        participants=participants,
-        seed=seed,
-        validator=validator,
-    )
-
-    event_log, winner = await game.run()
-
-    # Show result (use first human's role)
-    first_human = next(iter(human_seats))
-    display_game_over(console, winner, players[first_human].role)
-
-    # Offer to show full log
-    if Prompt.ask("\n[bold]View full game log?[/bold] (y/n)", default="n") in ("y", "Y"):
-        console.print("\n" + str(event_log))
-
-
 async def run_ai_simulation(
     seed: int,
     validator: GameValidator | None = None,
-    show_log: bool = True,
 ) -> str:
     """Run a game with all AI players (for spectators).
 
@@ -208,8 +81,7 @@ async def run_ai_simulation(
         title="Result"
     ))
 
-    if show_log:
-        console.print("\n" + str(event_log))
+    console.print("\n" + str(event_log))
 
     return winner
 
@@ -360,12 +232,6 @@ def main():
         help="Watch AI vs AI simulation (no human player)"
     )
     parser.add_argument(
-        "--human-seats",
-        type=str,
-        default=None,
-        help="Comma-separated seats where humans play (e.g., '0,1,2')"
-    )
-    parser.add_argument(
         "--validate",
         action="store_true",
         help="Enable in-game and post-game validators"
@@ -375,6 +241,11 @@ def main():
         type=int,
         default=None,
         help="Run N sequential games with validators (stress test mode)"
+    )
+    parser.add_argument(
+        "--ai",
+        action="store_true",
+        help="Run AI vs AI simulation (overrides default human mode)"
     )
 
     args = parser.parse_args()
@@ -388,19 +259,6 @@ def main():
         print("Error: --games must be a positive integer")
         return 1
 
-    # Parse human seats
-    human_seats: set[int] = set()
-    if args.human_seats:
-        try:
-            human_seats = {int(s.strip()) for s in args.human_seats.split(",")}
-            for seat in human_seats:
-                if seat < 0 or seat > 11:
-                    print(f"Error: Invalid seat {seat}. Must be 0-11.")
-                    return 1
-        except ValueError:
-            print("Error: --human-seats must be comma-separated integers (e.g., '0,1,2')")
-            return 1
-
     # Create validator if requested
     validator: GameValidator | None = None
     if args.validate:
@@ -410,12 +268,13 @@ def main():
     if args.games is not None:
         # Stress test mode
         run_stress_test(args.games, seed_base=args.seed)
-    elif args.watch or len(human_seats) == 0:
-        # AI vs AI mode
+    elif args.ai or args.watch:
+        # AI vs AI mode (explicit --ai or --watch flag)
         asyncio.run(run_ai_simulation(args.seed, validator=validator))
     else:
-        # Interactive mode with human(s)
-        asyncio.run(run_playable_game(args.seed, human_seats, validator=validator))
+        # Default: single human player with Textual UI
+        random_seat = random.randint(0, 11)
+        asyncio.run(WerewolfUI(args.seed, random_seat).run_async())
 
     return 0
 

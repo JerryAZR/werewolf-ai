@@ -14,6 +14,7 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.models.player import Player, Role
+from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType
 
 
 # ============================================================================
@@ -227,6 +228,22 @@ Enter your decision:"""
 
         return system, user
 
+    def _build_choices(self) -> ChoiceSpec:
+        """Build ChoiceSpec for nomination decision.
+
+        Returns:
+            ChoiceSpec with "run" and "not running" options for TUI rendering
+        """
+        return ChoiceSpec(
+            choice_type=ChoiceType.SINGLE,
+            prompt='Do you want to run for Sheriff? Enter "run" or "not running".',
+            options=[
+                ChoiceOption(value="run", display="Run for Sheriff"),
+                ChoiceOption(value="not running", display="Decline to Run"),
+            ],
+            allow_none=False,
+        )
+
     async def _get_valid_nomination(
         self,
         context: "PhaseContext",
@@ -247,6 +264,9 @@ Enter your decision:"""
         Returns:
             SheriffNomination event with running=True/False
         """
+        # Build choices for TUI rendering
+        choices = self._build_choices()
+
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, for_seat)
 
@@ -255,7 +275,7 @@ Enter your decision:"""
             if attempt > 0:
                 hint = 'Please enter either "run" or "not running".'
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
 
             # Parse response
             decision = self._parse_nomination(raw)

@@ -158,12 +158,15 @@ async def test_complete_sheriff_election_flow(day1_context: PhaseContext):
     """Test the complete sheriff election flow: Nomination -> Campaign -> OptOut -> Vote."""
     # Create participants where 8 players run, 4 stay as voters
     # Need some voters for the election to work
+    # Note: New CampaignHandler makes 2 calls per candidate (stay/opt-out + speech/explanation)
     participants = {}
     for seat in range(12):
         if seat in [0, 2, 4, 6, 8, 10, 1, 3]:  # 8 candidates
-            response_iter = ["run", "I want to be your Sheriff!", "stay"]
-        else:  # 4 voters
-            response_iter = ["not running", "", "stay"]
+            # [nomination, campaign_stage1, campaign_stage2, opt_out]
+            response_iter = ["run", "stay", "I want to be your Sheriff!", "stay"]
+        else:  # 4 voters - need response for OptOut query too
+            # [nomination, campaign_stage1, campaign_stage2, opt_out]
+            response_iter = ["not running", "opt-out", "", "stay"]
 
         participants[seat] = MockParticipant(response_iter=response_iter)
 
@@ -256,12 +259,15 @@ async def test_complete_sheriff_election_flow(day1_context: PhaseContext):
 async def test_sheriff_election_with_partial_nominations(day1_context: PhaseContext):
     """Test sheriff election when only some players nominate."""
     # Create participants where only 4 players run
+    # Note: New CampaignHandler makes 2 calls per candidate
     participants = {}
     for seat in range(12):
         if seat in [0, 3, 6, 9]:
-            response_iter = ["run", "I want to be Sheriff!", "stay"]
+            # [nomination, campaign_stage1, campaign_stage2, opt_out]
+            response_iter = ["run", "stay", "I want to be Sheriff!", "stay"]
         else:
-            response_iter = ["not running", "", "stay"]  # Won't be asked for campaign
+            # [nomination, campaign_stage1, campaign_stage2, opt_out]
+            response_iter = ["not running", "opt-out", "", "stay"]
 
         participants[seat] = MockParticipant(response_iter=response_iter)
 
@@ -367,12 +373,15 @@ async def test_sheriff_election_no_nominations(day1_context: PhaseContext):
 async def test_sheriff_candidates_cannot_vote(day1_context: PhaseContext):
     """Test that sheriff candidates cannot vote in the election."""
     # Only 2 players run
+    # Note: New CampaignHandler makes 2 calls per candidate
     participants = {}
     for seat in range(12):
         if seat in [0, 1]:
-            response_iter = ["run", "Vote for me!", "stay"]
+            # [nomination, campaign_stage1, campaign_stage2, opt_out]
+            response_iter = ["run", "stay", "Vote for me!", "stay"]
         else:
-            response_iter = ["not running", "", "stay"]
+            # [nomination, campaign_stage1, campaign_stage2, opt_out]
+            response_iter = ["not running", "opt-out", "", "stay"]
 
         participants[seat] = MockParticipant(response_iter=response_iter)
 

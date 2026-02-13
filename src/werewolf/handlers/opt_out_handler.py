@@ -14,6 +14,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType
 
 
 # ============================================================================
@@ -228,6 +229,22 @@ Enter your decision:"""
 
         return system, user
 
+    def _build_choices(self) -> ChoiceSpec:
+        """Build ChoiceSpec for opt-out decision.
+
+        Returns:
+            ChoiceSpec with "opt out" and "stay" options
+        """
+        return ChoiceSpec(
+            choice_type=ChoiceType.SINGLE,
+            prompt='Do you want to opt out of the Sheriff race? Enter "opt out" or "stay".',
+            options=[
+                ChoiceOption(value="opt out", display="Opt Out (withdraw from race)"),
+                ChoiceOption(value="stay", display="Stay (remain in race)"),
+            ],
+            allow_none=False,
+        )
+
     async def _get_valid_decision(
         self,
         context: "PhaseContext",
@@ -250,12 +267,15 @@ Enter your decision:"""
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, for_seat)
 
+            # Build choices for TUI rendering
+            choices = self._build_choices()
+
             # Add hint for retry attempts
             hint = None
             if attempt > 0:
                 hint = 'Previous response was invalid. Please respond with exactly "opt out" or "stay".'
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
 
             # Parse the decision
             decision = self._parse_decision(raw)
@@ -272,7 +292,7 @@ Enter your decision:"""
 
             # Retry with hint
             hint = 'Please respond with exactly "opt out" or "stay".'
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
             decision = self._parse_decision(raw)
 
             if decision is not None:

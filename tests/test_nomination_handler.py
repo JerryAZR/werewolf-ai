@@ -424,3 +424,126 @@ def test_parse_nomination():
     assert handler._parse_nomination("yes") is None
     assert handler._parse_nomination("") is None
     assert handler._parse_nomination("run for sheriff") is None
+
+
+# ============================================================================
+# Test: Handler MUST pass choices parameter to participant.decide()
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_nomination_handler_should_pass_choices():
+    """NominationHandler MUST pass choices parameter to participant.decide().
+
+    This test exposes the bug where NominationHandler doesn't provide ChoiceSpec,
+    causing TextualParticipant to fall back to a broken "Skip / Abstain" menu.
+    """
+    from werewolf.handlers.nomination_handler import NominationHandler
+    from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType
+
+    players = {
+        0: Player(seat=0, name="Player_0", role=Role.VILLAGER, player_type=PlayerType.AI),
+        1: Player(seat=1, name="Player_1", role=Role.SEER, player_type=PlayerType.AI),
+    }
+
+    context = PhaseContext(
+        players=players,
+        living_players={0, 1},
+        dead_players=set(),
+        sheriff=None,
+        day=1,
+    )
+
+    # Create mock participant that records calls
+    mock_participant = AsyncMock()
+    mock_participant.decide = AsyncMock(return_value="run")
+
+    handler = NominationHandler()
+    await handler(context, [(0, mock_participant)])
+
+    # Verify that choices WAS PASSED (not None)
+    call_args = mock_participant.decide.call_args
+    assert call_args is not None, "participant.decide() was not called"
+
+    # Get the 'choices' keyword argument
+    choices_passed = call_args.kwargs.get('choices')
+
+    # FAILURE: If choices is None, the handler is not doing its job
+    assert choices_passed is not None, (
+        "BUG: NominationHandler did not pass 'choices' parameter to participant.decide(). "
+        "This causes TextualParticipant to show broken 'Skip / Abstain' menu instead of "
+        "proper 'run' / 'not running' options."
+    )
+
+    # Verify choices has correct structure for nomination
+    if hasattr(choices_passed, 'options'):
+        values = [opt.value for opt in choices_passed.options]
+    elif isinstance(choices_passed, list):
+        values = [str(v) if not isinstance(v, str) else v for v in choices_passed]
+    else:
+        values = []
+
+    # Verify "run" and "not running" are in the choices
+    assert "run" in values, (
+        f"BUG: Choices did not include 'run' option. Got: {values}"
+    )
+    assert "not running" in values, (
+        f"BUG: Choices did not include 'not running' option. Got: {values}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_nomination_handler_choices_format():
+    """NominationHandler choices should have correct format.
+
+    When choices are provided, they should be a ChoiceSpec with:
+    - choice_type: SINGLE (select one option)
+    - prompt: Explains the nomination decision
+    - options: "run" and "not running" (both required)
+    - allow_none: False (must choose one of the two)
+    """
+    from werewolf.handlers.nomination_handler import NominationHandler
+    from werewolf.ui.choices import ChoiceSpec, ChoiceType
+
+    players = {
+        0: Player(seat=0, name="Player_0", role=Role.VILLAGER, player_type=PlayerType.AI),
+    }
+
+    context = PhaseContext(
+        players=players,
+        living_players={0},
+        dead_players=set(),
+        sheriff=None,
+        day=1,
+    )
+
+    mock_participant = AsyncMock()
+    mock_participant.decide = AsyncMock(return_value="run")
+
+    handler = NominationHandler()
+    await handler(context, [(0, mock_participant)])
+
+    choices_passed = mock_participant.decide.call_args.kwargs.get('choices')
+
+    # Verify it's a ChoiceSpec
+    assert isinstance(choices_passed, ChoiceSpec), (
+        f"BUG: choices should be ChoiceSpec, got {type(choices_passed)}"
+    )
+
+    # Verify choice_type is SINGLE (not SEAT or other)
+    assert choices_passed.choice_type == ChoiceType.SINGLE, (
+        f"BUG: choice_type should be SINGLE for nomination, got {choices_passed.choice_type}"
+    )
+
+    # Verify prompt is present
+    assert choices_passed.prompt, "BUG: prompt should not be empty"
+
+    # Verify both options exist
+    values = [opt.value for opt in choices_passed.options]
+    assert "run" in values, f"BUG: 'run' option missing. Options: {values}"
+    assert "not running" in values, f"BUG: 'not running' option missing. Options: {values}"
+
+    # Verify allow_none is False (must choose one)
+    assert choices_passed.allow_none is False, (
+        "BUG: allow_none should be False for nomination - player must choose run or not running"
+    )

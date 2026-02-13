@@ -23,6 +23,7 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.models.player import Player, Role
+from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType, make_seat_choice
 
 
 # ============================================================================
@@ -327,15 +328,7 @@ class DeathResolutionHandler:
         if player is None:
             player = Player(seat=seat, role=Role.ORDINARY_VILLAGER)
 
-        # Query last words (Night 1 only)
-        last_words = await self._get_last_words(
-            context=context,
-            seat=seat,
-            day=day,
-            participant=participant,
-        )
-
-        # Query hunter shoot target (only if Hunter + WEREWOLF_KILL)
+        # Query hunter shoot target FIRST (only if Hunter + WEREWOLF_KILL)
         hunter_shoot_target = await self._get_hunter_shoot_target(
             context=context,
             seat=seat,
@@ -344,8 +337,16 @@ class DeathResolutionHandler:
             participant=participant,
         )
 
-        # Query badge transfer (only if Sheriff)
+        # Query badge transfer SECOND (only if Sheriff)
         badge_transfer_to = await self._get_badge_transfer(
+            context=context,
+            seat=seat,
+            day=day,
+            participant=participant,
+        )
+
+        # Query last words LAST (Night 1 only)
+        last_words = await self._get_last_words(
             context=context,
             seat=seat,
             day=day,
@@ -538,13 +539,14 @@ class DeathResolutionHandler:
         if participant is None:
             return self._choose_hunter_shoot_target(context, seat)
 
-        # Build prompts
+        # Build prompts and choices
         system, user = self._build_hunter_shoot_prompts(context, seat, day)
+        choices = self._build_hunter_shoot_choices(context, seat)
 
         # Query participant with retries
         for attempt in range(self.max_retries):
             try:
-                response = await participant.decide(system, user)
+                response = await participant.decide(system, user, choices=choices)
                 target = self._parse_hunter_shoot_response(response, context, seat)
                 if target is not None:
                     return target
@@ -554,7 +556,7 @@ class DeathResolutionHandler:
             # Provide hint on retry
             hint = "Please enter a valid seat number or SKIP."
             try:
-                response = await participant.decide(system, user, hint)
+                response = await participant.decide(system, user, hint=hint, choices=choices)
                 target = self._parse_hunter_shoot_response(response, context, seat)
                 if target is not None:
                     return target
@@ -596,7 +598,23 @@ class DeathResolutionHandler:
 
         return system, user
 
-        return system, user
+    def _build_hunter_shoot_choices(self, context: "PhaseContext", hunter_seat: int) -> ChoiceSpec:
+        """Build ChoiceSpec for hunter shoot decision.
+
+        Args:
+            context: Game state
+            hunter_seat: Hunter's seat
+
+        Returns:
+            ChoiceSpec with skip option and living player seats
+        """
+        living_players = sorted(context.living_players - {hunter_seat})
+
+        return make_seat_choice(
+            prompt="Choose your target (or Skip):",
+            seats=living_players,
+            allow_none=True,
+        )
 
     def _parse_hunter_shoot_response(
         self,
@@ -696,11 +714,12 @@ class DeathResolutionHandler:
 
         # Build prompts
         system, user = self._build_badge_transfer_prompts(context, seat, day)
+        choices = self._build_badge_transfer_choices(context, seat)
 
         # Query participant with retries
         for attempt in range(self.max_retries):
             try:
-                response = await participant.decide(system, user)
+                response = await participant.decide(system, user, choices=choices)
                 target = self._parse_badge_transfer_response(response, context, seat)
                 if target is not None:
                     return target
@@ -710,7 +729,7 @@ class DeathResolutionHandler:
             # Provide hint on retry
             hint = "Please enter a valid seat number or SKIP."
             try:
-                response = await participant.decide(system, user, hint)
+                response = await participant.decide(system, user, hint=hint, choices=choices)
                 target = self._parse_badge_transfer_response(response, context, seat)
                 if target is not None:
                     return target
@@ -719,6 +738,24 @@ class DeathResolutionHandler:
 
         # Fallback to template
         return self._choose_badge_heir(context, seat)
+
+    def _build_badge_transfer_choices(self, context: "PhaseContext", sheriff_seat: int) -> ChoiceSpec:
+        """Build ChoiceSpec for badge transfer.
+
+        Args:
+            context: Game state
+            sheriff_seat: Sheriff's seat
+
+        Returns:
+            ChoiceSpec with skip option and living player seats
+        """
+        living_players = sorted(context.living_players - {sheriff_seat})
+
+        return make_seat_choice(
+            prompt="Choose who to pass the badge to (or Skip):",
+            seats=living_players,
+            allow_none=True,
+        )
 
     def _build_badge_transfer_prompts(
         self,

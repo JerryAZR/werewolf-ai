@@ -121,10 +121,56 @@ class StubPlayer:
                 values = [str(v) for _, v in choices]
                 return str(self._rng.choice(values))
 
-        # Check if it's a dict
+        # Check if it's a dict with special format (e.g., WitchHandler)
         if isinstance(choices, dict) and choices:
+            # Check for special witch_action format
+            if choices.get("type") == "witch_action":
+                # Handle witch action: need to return ANTIDOTE/POISON + target, or PASS
+                action_choices = choices.get("action_choices")
+                kill_target = choices.get("kill_target")
+                poison_available = choices.get("poison_available", False)
+                antidote_available = choices.get("antidote_available", False)
+
+                # Get valid action choices
+                if hasattr(action_choices, 'options') and action_choices.options:
+                    action_values = [str(opt.value) for opt in action_choices.options]
+                else:
+                    action_values = ["PASS"]
+
+                # Randomly select an action
+                action = str(self._rng.choice(action_values))
+
+                # For PASS, no target needed
+                if action == "PASS":
+                    return action
+
+                # For ANTIDOTE or POISON, need to append a target
+                # Use kill_target if available, otherwise pick a random living player
+                if action == "ANTIDOTE" and kill_target is not None:
+                    return f"{action} {kill_target}"
+                elif action == "POISON":
+                    # Pick a random target (not witch)
+                    living = list(range(12))  # Simplified - would need context
+                    target = self._rng.choice(living)
+                    return f"{action} {target}"
+                elif action == "POISON" and kill_target is not None:
+                    return f"{action} {kill_target}"
+
+                return action
+
+            # Regular dict - extract values
             values = list(choices.values())
             return str(self._rng.choice(values))
+
+        # Check if it's a ChoiceSpec object
+        if hasattr(choices, 'options') and hasattr(choices, 'choice_type'):
+            # Extract values from ChoiceSpec.options
+            values = [str(opt.value) for opt in choices.options]
+            if values:
+                return str(self._rng.choice(values))
+            # If no options but allow_none, return skip/abstain
+            if hasattr(choices, 'allow_none') and choices.allow_none:
+                return "skip"
 
         # Fallback: try to parse as raw options
         if hasattr(choices, '__iter__') and not isinstance(choices, str):
@@ -245,9 +291,9 @@ class StubPlayer:
             SubPhase.SEER_ACTION: lambda r: r.isdigit(),
             # Nomination: "run" or "not running"
             SubPhase.NOMINATION: lambda r: r in ["run", "not running"],
-            # Campaign: either CAMPAIGN_NOT_RUNNING or a real speech (>10 chars)
-            SubPhase.CAMPAIGN: lambda r: r == CAMPAIGN_NOT_RUNNING or len(r) > 10,
-            SubPhase.OPT_OUT: lambda r: r in ["run", "opt-out", "stay"],
+            # Campaign: either "opt-out" or a real speech (>10 chars)
+            SubPhase.CAMPAIGN: lambda r: r == CAMPAIGN_OPT_OUT or len(r) > 10,
+            SubPhase.OPT_OUT: lambda r: r in ["stay", "opt-out", "opt out"],
             SubPhase.SHERIFF_ELECTION: lambda r: r.isdigit() or r == "abstain",
             SubPhase.DEATH_RESOLUTION: lambda r: len(r) > 5,  # Real last words
             SubPhase.DISCUSSION: lambda r: len(r) > 10,
@@ -325,7 +371,7 @@ class StubPlayer:
         if is_campaign:
             # ~40% enter campaign (~5 out of 12), ~60% skip
             if self._rng.random() < 0.6:
-                return CAMPAIGN_NOT_RUNNING
+                return "opt-out"  # Withdraw from campaign
 
         speeches = [
             "I don't have much to say yet. I'll be watching carefully.",

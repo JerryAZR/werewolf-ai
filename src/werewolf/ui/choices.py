@@ -138,13 +138,17 @@ def make_action_choice(
         for value, display in actions
     ]
 
-    return ChoiceSpec(
-        choice_type=ChoiceType.SINGLE,
-        prompt=prompt,
-        options=options,
-        allow_none=allow_none,
-        none_display="Pass / Skip" if allow_none else None,
-    )
+    # Only include none_display if allow_none is True
+    kwargs = {
+        "choice_type": ChoiceType.SINGLE,
+        "prompt": prompt,
+        "options": options,
+        "allow_none": allow_none,
+    }
+    if allow_none:
+        kwargs["none_display"] = "Pass / Skip"
+
+    return ChoiceSpec(**kwargs)
 
 
 def make_yes_no_choice(prompt: str) -> ChoiceSpec:

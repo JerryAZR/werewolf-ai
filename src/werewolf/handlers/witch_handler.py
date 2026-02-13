@@ -386,18 +386,21 @@ Enter your action (e.g., "PASS", "ANTIDOTE 7", or "POISON 3"):"""
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, witch_seat, night_actions)
 
+            # Build choices for TUI rendering
+            choices = self.build_choice_spec(context, witch_seat, night_actions)
+
             # Add hint for retry attempts
             hint = None
             if attempt > 0:
                 hint = "Previous response was invalid. Please follow the format: PASS, ANTIDOTE <seat>, or POISON <seat>"
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
 
             try:
                 action_type, target = self._parse_response(raw)
             except ValueError as e:
                 hint = str(e)
-                raw = await participant.decide(system, user, hint=hint)
+                raw = await participant.decide(system, user, hint=hint, choices=choices)
                 action_type, target = self._parse_response(raw)
 
             # Validate action
@@ -427,7 +430,7 @@ Enter your action (e.g., "PASS", "ANTIDOTE 7", or "POISON 3"):"""
                     f"Failed after {self.max_retries} attempts. Last hint: {hint}"
                 )
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
             action_type, target = self._parse_response(raw)
 
             # Validate again after retry

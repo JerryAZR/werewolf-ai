@@ -14,6 +14,7 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.models.player import Player, Role
+from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType
 
 
 # ============================================================================
@@ -165,13 +166,13 @@ class CampaignHandler:
         for seat in ordered_candidates:
             participant = participant_dict.get(seat)
             if participant:
-                speech = await self._get_valid_speech(
+                speech = await self._get_valid_decision(
                     context=context,
                     participant=participant,
                     for_seat=seat,
                     candidates=ordered_candidates,
                 )
-                # Skip "not running" responses
+                # Skip None responses (opt-out)
                 if speech is not None:
                     events.append(speech)
 
@@ -290,18 +291,110 @@ CAMPAIGN RESPONSE:
 
         return system, user
 
-    async def _get_valid_speech(
+    def _build_stay_optout_choices(self) -> ChoiceSpec:
+        """Build ChoiceSpec for stay/opt-out decision (Stage 1 of 2).
+
+        Returns:
+            ChoiceSpec with "stay" and "opt-out" options for TUI rendering
+        """
+        return ChoiceSpec(
+            choice_type=ChoiceType.SINGLE,
+            prompt='Do you want to stay in the race or withdraw? Enter "stay" or "opt-out".',
+            options=[
+                ChoiceOption(value="stay", display="Stay in Race"),
+                ChoiceOption(value="opt-out", display="Withdraw from Race"),
+            ],
+            allow_none=False,
+        )
+
+    def _build_speech_prompt(self, is_opt_out: bool, context: "PhaseContext", for_seat: int, candidates: list[int]) -> tuple[str, str]:
+        """Build prompts for speech or explanation (Stage 2 of 2).
+
+        Args:
+            is_opt_out: True if player is withdrawing (explanation), False if staying (speech)
+            context: Game state
+            for_seat: The candidate seat
+            candidates: List of all candidate seats
+
+        Returns:
+            Tuple of (system_prompt, user_prompt)
+        """
+        player = context.get_player(for_seat)
+        role_name = player.role.value if player else "Unknown"
+
+        other_candidates = [c for c in candidates if c != for_seat]
+        other_candidates_str = ', '.join(map(str, sorted(other_candidates)))
+
+        if is_opt_out:
+            # Explanation for withdrawing
+            system = f"""You have chosen to withdraw from the Sheriff race on Day {context.day}.
+
+You must now explain your withdrawal to the village. This explanation will be visible to all players.
+Be honest or strategic about why you're stepping down.
+
+Your response should be your explanation as a single string."""
+
+            user = f"""=== Day {context.day} - Sheriff Campaign Withdrawal ===
+
+YOUR INFORMATION:
+  Your seat: {for_seat}
+  Your role: {role_name}
+  You have chosen to WITHDRAW from the Sheriff race!
+
+SHERIFF CANDIDATES (seats): {other_candidates_str if other_candidates else 'None - you are alone!'}
+
+WITHDRAWAL EXPLANATION:
+  Please explain why you are withdrawing from the race.
+  Your explanation will be visible to all players.
+
+  Your response:"""
+        else:
+            # Campaign speech
+            system = f"""You have chosen to stay in the Sheriff race on Day {context.day}.
+
+This is your chance to convince the village to vote for you as Sheriff!
+Make a compelling campaign speech.
+
+SHERIFF POWERS:
+- 1.5x vote weight during voting phases
+- Can transfer badge if eliminated
+- Speaks LAST during discussions
+
+Your response should be your campaign speech as a single string.
+Make it compelling and appropriate for a social deduction game."""
+
+            user = f"""=== Day {context.day} - Sheriff Campaign Speech ===
+
+YOUR INFORMATION:
+  Your seat: {for_seat}
+  Your role: {role_name}
+  You have chosen to STAY in the Sheriff race!
+
+SHERIFF CANDIDATES (seats): {other_candidates_str if other_candidates else 'None - you are alone!'}
+
+CAMPAIGN SPEECH:
+  This is your chance to convince others to vote for you!
+  Your speech will be visible to all players.
+
+  Your response:"""
+
+        return system, user
+
+    async def _get_valid_decision(
         self,
         context: "PhaseContext",
         participant: Participant,
         for_seat: int,
         candidates: list[int],
     ) -> Optional[Speech]:
-        """Get valid campaign speech from participant with retry.
+        """Get valid campaign decision from participant with two-stage queries.
+
+        Stage 1: Query with ChoiceSpec for "stay" / "opt-out"
+        Stage 2: If "stay": free-form speech; if "opt-out": explanation
 
         Campaign Response Protocol:
-        - "opt out" (case-insensitive): Candidate opts out after nomination
-        - Any non-empty text: Valid campaign speech, returns Speech event
+        - "stay" (case-insensitive): Player stays in race, then speech required
+        - "opt-out" (case-insensitive): Player withdraws, then explanation required
 
         Args:
             context: Game state
@@ -310,58 +403,88 @@ CAMPAIGN RESPONSE:
             candidates: List of all candidates (ordered)
 
         Returns:
-            Speech event, or None if participant says "opt out"
+            Speech event, or None if participant opts out
 
         Raises:
             MaxRetriesExceededError: If max retries are exceeded without valid input
         """
+        # Stage 1: Get stay/opt-out decision with ChoiceSpec
+        choices = self._build_stay_optout_choices()
+
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, for_seat, candidates)
+            # Query for stay/opt-out selection
+            selection = await participant.decide(
+                system_prompt="You are deciding whether to stay in or withdraw from the Sheriff race.",
+                user_prompt='Do you want to stay in the race or withdraw? Enter "stay" or "opt-out".',
+                hint='Please enter either "stay" or "opt-out".',
+                choices=choices,
+            )
 
-            # Add hint for retry attempts
-            hint = None
-            if attempt > 0:
-                hint = "Your speech was empty. Please provide a campaign speech or 'opt out'."
+            # Parse selection (be flexible with "opt-out" vs "opt out")
+            selection_lower = selection.strip().lower().replace(" ", "-")
 
-            raw = await participant.decide(system, user, hint=hint)
+            if selection_lower == "stay":
+                # Stage 2: Get campaign speech (free-form)
+                system, user = self._build_speech_prompt(
+                    is_opt_out=False,
+                    context=context,
+                    for_seat=for_seat,
+                    candidates=candidates,
+                )
 
-            # Validate content
-            content = raw.strip().lower()
-            if not content:
-                if attempt == self.max_retries - 1:
-                    raise MaxRetriesExceededError(
-                        f"Failed after {self.max_retries} attempts. Speech was empty."
+                for speech_attempt in range(self.max_retries):
+                    speech = await participant.decide(
+                        system_prompt=system,
+                        user_prompt=user,
+                        hint=None,
+                        choices=None,  # Free-form text
                     )
-                hint = "Your speech was empty. Please provide a campaign speech or 'opt out'."
-                raw = await participant.decide(system, user, hint=hint)
-                content = raw.strip().lower()
 
-            # Check for OPT_OUT response
-            if content == CAMPAIGN_OPT_OUT:
+                    if speech.strip():
+                        preview = speech.strip()[:100] + "..." if len(speech.strip()) > 100 else speech.strip()
+                        return Speech(
+                            actor=for_seat,
+                            content=speech.strip(),
+                            phase=Phase.DAY,
+                            micro_phase=SubPhase.CAMPAIGN,
+                            day=context.day,
+                            debug_info=f"speech_preview={preview}",
+                        )
+
+                    if speech_attempt == self.max_retries - 1:
+                        raise MaxRetriesExceededError(
+                            f"Failed after {self.max_retries} attempts. Speech was empty."
+                        )
+
+            elif selection_lower == "opt-out":
+                # Stage 2: Get explanation for withdrawing (free-form)
+                system, user = self._build_speech_prompt(
+                    is_opt_out=True,
+                    context=context,
+                    for_seat=for_seat,
+                    candidates=candidates,
+                )
+
+                # Still need to get explanation, but don't create Speech event
+                await participant.decide(
+                    system_prompt=system,
+                    user_prompt=user,
+                    hint=None,
+                    choices=None,  # Free-form text
+                )
+
+                # Opt-out means no speech event
                 return None
 
-            if raw.strip():
-                # Create speech with preview for debug
-                preview = raw.strip()[:100] + "..." if len(raw.strip()) > 100 else raw.strip()
-                return Speech(
-                    actor=for_seat,
-                    content=raw.strip(),
-                    phase=Phase.DAY,
-                    micro_phase=SubPhase.CAMPAIGN,
-                    day=context.day,
-                    debug_info=f"speech_preview={preview}",
+            # Invalid selection
+            if attempt == self.max_retries - 1:
+                raise MaxRetriesExceededError(
+                    f"Player {for_seat} failed to provide valid stay/opt-out decision "
+                    f"after {self.max_retries} attempts. Last response: {selection!r}"
                 )
 
         # Fallback - should not reach here
-        default_speech = "I would like to be your Sheriff."
-        return Speech(
-            actor=for_seat,
-            content=default_speech,
-            phase=Phase.DAY,
-            micro_phase=SubPhase.CAMPAIGN,
-            day=context.day,
-            debug_info="Max retries exceeded, using default speech",
-        )
+        return None
 
 
 class MaxRetriesExceededError(Exception):

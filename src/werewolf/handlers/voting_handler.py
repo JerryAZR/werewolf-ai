@@ -20,6 +20,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType, make_seat_choice
 
 
 # ============================================================================
@@ -308,6 +309,21 @@ VOTE INSTRUCTIONS:
 
         return system, user
 
+    def _build_choices(self, living_players: set[int]) -> ChoiceSpec:
+        """Build ChoiceSpec for voting.
+
+        Args:
+            living_players: Set of valid vote targets
+
+        Returns:
+            ChoiceSpec for selecting a target
+        """
+        return make_seat_choice(
+            prompt="Who do you vote to banish?",
+            seats=list(living_players),
+            allow_none=True,
+        )
+
     async def _get_valid_vote(
         self,
         context: "PhaseContext",
@@ -329,12 +345,15 @@ VOTE INSTRUCTIONS:
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, voter_seat, living_players)
 
+            # Build choices for TUI rendering
+            choices = self._build_choices(living_players)
+
             # Add hint for retry attempts
             hint = None
             if attempt > 0:
                 hint = 'Previous response was invalid. Please enter a valid seat number or "None".'
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
 
             # Parse the vote
             target = self._parse_vote(raw, living_players)
@@ -356,7 +375,7 @@ VOTE INSTRUCTIONS:
 
             # Retry with hint
             hint = f'Please enter a valid seat number from {sorted(living_players)} or "None" to abstain.'
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
             target = self._parse_vote(raw, living_players)
 
             if target is not None:

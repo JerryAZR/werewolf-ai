@@ -14,6 +14,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType, make_seat_choice
 
 
 # ============================================================================
@@ -309,6 +310,25 @@ VOTE INSTRUCTIONS:
 
         return system, user
 
+    def _build_choices(self, candidates: list[int]) -> ChoiceSpec:
+        """Build ChoiceSpec for sheriff vote.
+
+        Args:
+            candidates: List of valid candidate seats
+
+        Returns:
+            ChoiceSpec for selecting a candidate
+        """
+        # Build seat_info for candidates
+        seat_info = {c: "Candidate" for c in candidates}
+
+        return make_seat_choice(
+            prompt="Who do you vote for Sheriff?",
+            seats=candidates,
+            seat_info=seat_info,
+            allow_none=True,
+        )
+
     async def _get_valid_vote(
         self,
         context: "PhaseContext",
@@ -330,12 +350,15 @@ VOTE INSTRUCTIONS:
         for attempt in range(self.max_retries):
             system, user = self._build_prompts(context, voter_seat, candidates)
 
+            # Build choices for TUI rendering
+            choices = self._build_choices(candidates)
+
             # Add hint for retry attempts
             hint = None
             if attempt > 0:
                 hint = 'Previous response was invalid. Please enter a valid candidate seat number.'
 
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
 
             # Parse the vote
             target = self._parse_vote(raw, candidates)
@@ -352,7 +375,7 @@ VOTE INSTRUCTIONS:
 
             # Retry with hint
             hint = f'Please enter a valid seat number from: {candidates}'
-            raw = await participant.decide(system, user, hint=hint)
+            raw = await participant.decide(system, user, hint=hint, choices=choices)
             target = self._parse_vote(raw, candidates)
 
             if target is not None:
