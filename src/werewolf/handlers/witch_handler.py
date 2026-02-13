@@ -302,7 +302,7 @@ class WitchHandler:
                 if player:
                     options.append(ChoiceOption(
                         value=f"POISON {seat}",
-                        display=f"Poison (kill player {seat} - {player.role.value})"
+                        display=f"Poison player {seat}"
                     ))
 
         return ChoiceSpec(

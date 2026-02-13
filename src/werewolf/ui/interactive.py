@@ -16,6 +16,17 @@ from rich.align import Align
 from .choices import ChoiceSpec, ChoiceType, ChoiceOption
 from .prompt_session import PromptSession, PromptType, PromptStep
 
+# Short role reminders for human players (instead of verbose system prompts)
+ROLE_REMINDERS = {
+    "WEREWOLF": "You are a WEREWOLF. Work with other werewolves to eliminate villagers.",
+    "SEER": "You are the SEER. Check one player each night to learn their alignment.",
+    "WITCH": "You are the WITCH. Use your antidote (save target) and poison (kill target) wisely.",
+    "HUNTER": "You are the HUNTER. When you die, you can shoot one player.",
+    "GUARD": "You are the GUARD. Protect one player each night from werewolf attacks.",
+    "ORDINARY_VILLAGER": "You are a VILLAGER. Find werewolves and vote them out.",
+    "VILLAGER": "You are a VILLAGER. Find werewolves and vote them out.",
+}
+
 
 class InteractiveParticipant:
     """A human participant using interactive TUI.
@@ -266,7 +277,7 @@ class InteractiveParticipant:
         hint: Optional[str],
     ) -> str:
         """Present interactive choice prompt."""
-        self._show_context(system_prompt, user_prompt, hint)
+        self._show_context(system_prompt, user_prompt, hint, choices)
 
         if choices.choice_type == ChoiceType.SEAT:
             return await self._prompt_seat(choices)
@@ -409,22 +420,29 @@ class InteractiveParticipant:
         system_prompt: str,
         user_prompt: str,
         hint: Optional[str],
+        choices: Optional[ChoiceSpec] = None,
     ) -> None:
         """Display the game context to the player."""
         if not self._show_prompts:
             return
 
+        # Extract role and show short reminder instead of verbose system prompt
+        role_reminder = self._extract_role_reminder(system_prompt)
+
         self._console.print(
             Panel(
-                Text(system_prompt, style="italic"),
-                title="[bold blue]Instructions[/bold blue]",
+                Text(role_reminder),
+                title="[bold blue]Your Role[/bold blue]",
                 expand=False,
             )
         )
 
+        # Always try to extract just the question (skip redundant options text if present)
+        display_prompt = self._extract_question_only(user_prompt)
+
         self._console.print(
             Panel(
-                Text(user_prompt),
+                Text(display_prompt),
                 title="[bold green]Situation[/bold green]",
                 expand=False,
             )
@@ -438,6 +456,41 @@ class InteractiveParticipant:
                     expand=False,
                 )
             )
+
+    def _extract_question_only(self, user_prompt: str) -> str:
+        """Extract only the question from user prompt, skip the redundant options.
+
+        Args:
+            user_prompt: Full user prompt with question and available options
+
+        Returns:
+            Just the question part
+        """
+        # Look for "Available options:" and截断 after it
+        if "Available options:" in user_prompt:
+            return user_prompt.split("Available options:")[0].strip()
+        # Also handle "Options:" format
+        if "Options:" in user_prompt:
+            return user_prompt.split("Options:")[0].strip()
+        return user_prompt
+
+    def _extract_role_reminder(self, system_prompt: str) -> str:
+        """Extract role from system prompt and return short reminder.
+
+        Args:
+            system_prompt: Full system prompt from handler
+
+        Returns:
+            Short role reminder string
+        """
+        # Extract role from prompts like "You are the WEREWOLF."
+        for role in ROLE_REMINDERS:
+            if f"You are the {role}" in system_prompt or f"You are a {role}" in system_prompt:
+                return ROLE_REMINDERS[role]
+
+        # Fallback: return first part of system prompt if no match
+        first_line = system_prompt.strip().split("\n")[0]
+        return first_line if first_line else "Your role"
 
 
 # ============================================================================

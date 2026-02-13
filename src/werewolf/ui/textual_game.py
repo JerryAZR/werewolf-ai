@@ -43,9 +43,7 @@ def reveal_role_text(seat: int, role) -> str:
 
 {description}
 
-Seat: {seat}
-
-[dim]Keep your identity secret! Don't reveal your role during the game.[/dim]"""
+Seat: {seat}"""
 
 
 class ChoiceRequest(Message):
