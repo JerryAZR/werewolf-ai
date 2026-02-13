@@ -228,14 +228,14 @@ def format_public_events(
         for announcement in public_events.death_announcements:
             parts.append(f"  Seats who died: {sorted(announcement.dead_players)}")
 
-    # Deaths today with last words
+    # Deaths today with last words (cause is hidden per game rules)
     if public_events.deaths_today:
         parts.append("DEATHS THIS MORNING:")
         for death in public_events.deaths_today:
             if hasattr(death, "last_words") and death.last_words:
-                parts.append(f"  Seat {death.actor}: {death.cause.value} - \"{death.last_words}\"")
+                parts.append(f"  Seat {death.actor}: \"{death.last_words}\"")
             else:
-                parts.append(f"  Seat {death.actor}: {death.cause.value}")
+                parts.append(f"  Seat {death.actor}")
 
     # Previous speeches
     if public_events.previous_speeches:

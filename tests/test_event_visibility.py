@@ -427,7 +427,8 @@ class TestFormatPublicEvents:
 
         assert "DEATHS THIS MORNING" in result
         assert "Seat 5" in result
-        assert "WEREWOLF_KILL" in result
+        # Cause should be hidden per game rules
+        assert "WEREWOLF_KILL" not in result
         assert "I trust seat 2" in result
 
     def test_format_death_without_last_words(self):
@@ -448,7 +449,8 @@ class TestFormatPublicEvents:
         )
 
         assert "Seat 5" in result
-        assert "BANISHMENT" in result
+        # Cause should be hidden per game rules
+        assert "BANISHMENT" not in result
         assert "last_words" not in result.lower()
 
     def test_format_previous_speeches(self):
