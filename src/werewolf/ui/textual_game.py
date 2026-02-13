@@ -16,6 +16,17 @@ from typing import Optional
 # Import for role descriptions
 from enum import Enum
 
+# Short role reminders for human players
+ROLE_REMINDERS = {
+    "WEREWOLF": "You are a WEREWOLF. Work with other werewolves to eliminate villagers.",
+    "SEER": "You are the SEER. Check one player each night to learn their alignment.",
+    "WITCH": "You are the WITCH. Use your antidote (save target) and poison (kill target) wisely.",
+    "HUNTER": "You are the HUNTER. When you die, you can shoot one player.",
+    "GUARD": "You are the GUARD. Protect one player each night from werewolf attacks.",
+    "ORDINARY_VILLAGER": "You are a VILLAGER. Find werewolves and vote them out.",
+    "VILLAGER": "You are a VILLAGER. Find werewolves and vote them out.",
+}
+
 
 class Role(Enum):
     WEREWOLF = "WEREWOLF"
@@ -378,12 +389,17 @@ class TextualParticipant:
         # Log what's happening
         self._app._write(f"\n[bold cyan]>>> YOUR TURN (Seat {self.seat})[/bold cyan]")
 
+        # Extract role and show short reminder
+        role_reminder = self._extract_role_reminder(system_prompt)
+        self._app._write(f"[bold blue]Your Role:[/bold blue] {role_reminder}")
+
+        # Strip redundant "Available options:" text when choices are provided
+        display_prompt = self._extract_question_only(user_prompt) if choices else user_prompt
+
         # Build context
         parts = []
-        if system_prompt:
-            parts.append(f"INSTRUCTIONS:\n{system_prompt}")
-        if user_prompt:
-            parts.append(f"SITUATION:\n{user_prompt}")
+        if display_prompt:
+            parts.append(f"SITUATION:\n{display_prompt}")
         if hint:
             parts.append(f"HINT:\n{hint}")
 
@@ -422,6 +438,23 @@ class TextualParticipant:
                 result = "-1"
         self._app._write(f"[dim]You chose: {result}[/dim]")
         return result
+
+    def _extract_role_reminder(self, system_prompt: str) -> str:
+        """Extract role from system prompt and return short reminder."""
+        for role in ROLE_REMINDERS:
+            if f"You are the {role}" in system_prompt or f"You are a {role}" in system_prompt:
+                return ROLE_REMINDERS[role]
+        # Fallback: return first line of system prompt
+        first_line = system_prompt.strip().split("\n")[0]
+        return first_line if first_line else "Your role"
+
+    def _extract_question_only(self, user_prompt: str) -> str:
+        """Extract only the question from user prompt, skip redundant options."""
+        if "Available options:" in user_prompt:
+            return user_prompt.split("Available options:")[0].strip()
+        if "Options:" in user_prompt:
+            return user_prompt.split("Options:")[0].strip()
+        return user_prompt
 
 
 async def run(seed: int, human_seat: int) -> None:
