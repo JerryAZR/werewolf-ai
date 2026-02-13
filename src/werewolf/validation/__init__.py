@@ -18,7 +18,7 @@ Files:
 - day_voting.py: J.1-J.2 voting checks
 - hunter.py: K.1-K.4 hunter action checks
 - badge_transfer.py: L.1-L.4 badge transfer checks
-- phase_order.py: C.1-C.15 phase ordering checks
+- phase_order.py: C.1-C.17 phase ordering checks
 - event_logging.py: N.1-N.6 event logging checks
 """
 
@@ -51,6 +51,7 @@ from .phase_order import (
     validate_night_subphase_order,
     validate_day_subphase_order,
     validate_werewolf_single_query,
+    validate_subphase_phase_match,
 )
 from .event_logging import (
     validate_event_logging,
@@ -93,6 +94,7 @@ __all__ = [
     "validate_night_subphase_order",
     "validate_day_subphase_order",
     "validate_werewolf_single_query",
+    "validate_subphase_phase_match",
     "validate_event_logging",
     "validate_phase_logging",
     "validate_night_outcome",

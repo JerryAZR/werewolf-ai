@@ -271,7 +271,13 @@ class CollectingValidator(NoOpValidator):
             validate_day_subphase_order,
             validate_werewolf_single_query,
             validate_seer_result,
+            validate_subphase_phase_match,
         )
+
+        # C.17: Validate subphase matches its phase (catches handler bugs)
+        violations = validate_subphase_phase_match(phase, subphase)
+        self._violations.extend(violations)
+
         # Use (phase, day) as key to separate night and day subphase history
         key = (phase, day)
         completed = self._subphase_history.get(key, set())

@@ -455,4 +455,66 @@ __all__ = [
     'validate_day_1_sheriff_order',
     'validate_werewolf_single_query',
     'validate_banishment_resolution',
+    'validate_subphase_phase_match',
 ]
+
+
+# Subphases that belong to NIGHT phase
+NIGHT_SUBPHASES = {
+    SubPhase.WEREWOLF_ACTION,
+    SubPhase.WITCH_ACTION,
+    SubPhase.GUARD_ACTION,
+    SubPhase.SEER_ACTION,
+    SubPhase.NIGHT_RESOLUTION,
+}
+
+# Subphases that belong to DAY phase
+DAY_SUBPHASES = {
+    SubPhase.NOMINATION,
+    SubPhase.CAMPAIGN,
+    SubPhase.OPT_OUT,
+    SubPhase.SHERIFF_ELECTION,
+    SubPhase.DEATH_RESOLUTION,
+    SubPhase.DISCUSSION,
+    SubPhase.VOTING,
+    SubPhase.BANISHMENT_RESOLUTION,
+}
+
+
+def validate_subphase_phase_match(
+    phase: Phase,
+    subphase: SubPhase,
+) -> list[ValidationViolation]:
+    """Validate that subphase belongs to the correct phase.
+
+    This catches bugs where a handler passes the wrong micro_phase to
+    SubPhaseLog (e.g., NIGHT_RESOLUTION appearing in DAY phase).
+
+    Args:
+        phase: The phase (NIGHT or DAY)
+        subphase: The subphase being added
+
+    Returns:
+        List of validation violations
+    """
+    violations: list[ValidationViolation] = []
+
+    if phase == Phase.NIGHT and subphase in DAY_SUBPHASES:
+        violations.append(ValidationViolation(
+            rule_id="C.17",
+            category="Phase Order",
+            message=f"DAY subphase {subphase.value} appeared in NIGHT phase - handler bug",
+            severity=ValidationSeverity.ERROR,
+            context={"phase": phase.value, "subphase": subphase.value}
+        ))
+
+    elif phase == Phase.DAY and subphase in NIGHT_SUBPHASES:
+        violations.append(ValidationViolation(
+            rule_id="C.17",
+            category="Phase Order",
+            message=f"NIGHT subphase {subphase.value} appeared in DAY phase - handler bug",
+            severity=ValidationSeverity.ERROR,
+            context={"phase": phase.value, "subphase": subphase.value}
+        ))
+
+    return violations

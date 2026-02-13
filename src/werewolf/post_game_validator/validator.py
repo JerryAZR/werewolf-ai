@@ -151,7 +151,29 @@ class PostGameValidator:
 
     def _validate_phase(self, phase_log: PhaseLog) -> None:
         """Validate a single phase, updating state as we go."""
+        from werewolf.events.game_events import Phase, SubPhase
+        from werewolf.validation.phase_order import (
+            NIGHT_SUBPHASES,
+            DAY_SUBPHASES,
+        )
+
         self._current_day = phase_log.number
+
+        # Validate C.17: Subphase must match its phase
+        for subphase_log in phase_log.subphases:
+            subphase = subphase_log.micro_phase
+            if phase_log.kind == Phase.NIGHT and subphase in DAY_SUBPHASES:
+                self._add_violation(
+                    "C.17", "Phase Order",
+                    f"DAY subphase {subphase.value} appeared in NIGHT phase - handler bug",
+                    context={"phase": phase_log.kind.value, "subphase": subphase.value}
+                )
+            elif phase_log.kind == Phase.DAY and subphase in NIGHT_SUBPHASES:
+                self._add_violation(
+                    "C.17", "Phase Order",
+                    f"NIGHT subphase {subphase.value} appeared in DAY phase - handler bug",
+                    context={"phase": phase_log.kind.value, "subphase": subphase.value}
+                )
 
         if phase_log.kind.value == "NIGHT":
             self._validate_night_phase(phase_log)
