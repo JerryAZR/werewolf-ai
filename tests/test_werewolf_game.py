@@ -769,7 +769,8 @@ class TestWerewolfGameHumanPlayerStub:
         event_log, winner = await game.run()
 
         assert event_log is not None
-        assert winner in ["WEREWOLF", "VILLAGER"]
+        # Note: winner can be None for ties (A.5 condition)
+        assert winner in ["WEREWOLF", "VILLAGER", None]
 
 
 # ============================================================================
