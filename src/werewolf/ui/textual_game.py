@@ -184,7 +184,18 @@ class WerewolfUI(App):
 
     def show_choices(self, prompt: str, options: list[tuple[str, str]], allow_none: bool = False, stage: Optional[str] = None, total_stages: Optional[int] = None) -> None:
         """Display a choice menu."""
-        self.clear_menu()
+        # Save the current request before clearing menu - we need it for selection handling
+        saved_request = self._choice_request
+
+        # Clear only the visual menu elements, not the request reference
+        try:
+            menu = self.query_one("#menu_section", Vertical)
+            menu.remove_children()
+        except Exception:
+            pass
+
+        # Restore the request reference after clearing menu
+        self._choice_request = saved_request
 
         menu = self.query_one("#menu_section", Vertical)
 
@@ -263,7 +274,18 @@ class WerewolfUI(App):
 
     def _show_text_input(self, request: ChoiceRequest) -> None:
         """Show text input UI."""
-        self.clear_menu()
+        # Save the current request before clearing menu - we need it for input handling
+        saved_request = self._choice_request
+
+        # Clear only the visual menu elements, not the request reference
+        try:
+            menu = self.query_one("#menu_section", Vertical)
+            menu.remove_children()
+        except Exception:
+            pass
+
+        # Restore the request reference after clearing menu
+        self._choice_request = saved_request
 
         menu = self.query_one("#menu_section", Vertical)
 
