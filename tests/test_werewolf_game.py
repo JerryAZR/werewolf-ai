@@ -369,8 +369,9 @@ class TestWerewolfGameDeterminism:
 
         # Different seeds may produce different winners
         # This is probabilistic so we'll just verify both are valid
-        assert winner1 in ["WEREWOLF", "VILLAGER"]
-        assert winner2 in ["WEREWOLF", "VILLAGER"]
+        # Note: winner can be None for ties (A.5 condition)
+        assert winner1 in ["WEREWOLF", "VILLAGER", None]
+        assert winner2 in ["WEREWOLF", "VILLAGER", None]
 
 
 class TestWerewolfGameEventLogStructure:
