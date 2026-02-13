@@ -22,6 +22,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.models.player import Player, Role
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType, make_seat_choice
 from werewolf.prompt_levels import (
@@ -126,6 +127,7 @@ class DeathResolutionHandler:
         context: "PhaseContext",
         night_outcome: "NightOutcomeInput",
         participants: Optional[Sequence[tuple[int, Participant]]] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
         micro_phase: SubPhase = SubPhase.NIGHT_RESOLUTION,
     ) -> HandlerResult:
         """Execute the NIGHT_RESOLUTION subphase for night deaths.
@@ -134,12 +136,14 @@ class DeathResolutionHandler:
             context: Game state with players, living/dead, sheriff
             night_outcome: NightOutcome with deaths dict {seat: DeathCause}
             participants: Sequence of (seat, Participant) tuples for dying players
+            events_so_far: Previous game events for public visibility filtering
             micro_phase: SubPhase type for the subphase log (NIGHT_RESOLUTION or DEATH_RESOLUTION)
 
         Returns:
             HandlerResult with SubPhaseLog containing DeathEvent(s)
         """
         events = []
+        events_so_far = events_so_far or []
         deaths = night_outcome.deaths
 
         # Convert participants to dict for easier lookup
@@ -170,6 +174,7 @@ class DeathResolutionHandler:
                 cause=cause,
                 day=night_outcome.day,
                 participant=participant,
+                events_so_far=events_so_far,
                 micro_phase=micro_phase,
             )
             events.append(death_event)
@@ -192,6 +197,7 @@ class DeathResolutionHandler:
         cause: DeathCause,
         day: int,
         participant: Optional[Participant] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
         micro_phase: SubPhase = SubPhase.NIGHT_RESOLUTION,
     ) -> DeathEvent:
         """Create a DeathEvent for a single death.
@@ -202,11 +208,13 @@ class DeathResolutionHandler:
             cause: DeathCause (WEREWOLF_KILL or POISON)
             day: Current day number
             participant: Participant for querying AI/human decisions
+            events_so_far: Previous game events for public visibility filtering
             micro_phase: SubPhase type for the death event
 
         Returns:
             DeathEvent with all associated actions resolved
         """
+        events_so_far = events_so_far or []
         player = context.get_player(seat)
         if player is None:
             player = Player(seat=seat, role=Role.ORDINARY_VILLAGER)
@@ -218,6 +226,7 @@ class DeathResolutionHandler:
             cause=cause,
             day=day,
             participant=participant,
+            events_so_far=events_so_far,
         )
 
         # Query badge transfer SECOND (only if Sheriff)
@@ -226,6 +235,7 @@ class DeathResolutionHandler:
             seat=seat,
             day=day,
             participant=participant,
+            events_so_far=events_so_far,
         )
 
         # Query last words LAST (Night 1 only)
@@ -234,6 +244,7 @@ class DeathResolutionHandler:
             seat=seat,
             day=day,
             participant=participant,
+            events_so_far=events_so_far,
         )
 
         return DeathEvent(
@@ -253,6 +264,7 @@ class DeathResolutionHandler:
         seat: int,
         day: int,
         participant: Optional[Participant] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> Optional[str]:
         """Get last words from dying player (Night 1 only).
 
@@ -261,6 +273,7 @@ class DeathResolutionHandler:
             seat: Dead player seat
             day: Current day number
             participant: Participant for AI query
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Last words string or None (night 2+ or no participant)
@@ -269,12 +282,14 @@ class DeathResolutionHandler:
         if day > 1:
             return None
 
+        events_so_far = events_so_far or []
+
         # If no participant, use template
         if participant is None:
             return self._generate_last_words_template(context, seat)
 
         # Build prompts
-        system, user = self._build_last_words_prompts(context, seat, day)
+        system, user = self._build_last_words_prompts(context, seat, day, events_so_far)
 
         # Query participant
         try:
@@ -293,6 +308,7 @@ class DeathResolutionHandler:
         context: "PhaseContext",
         seat: int,
         day: int,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> tuple[str, str]:
         """Build system and user prompts for last words.
 
@@ -300,10 +316,17 @@ class DeathResolutionHandler:
             context: Game state
             seat: Dying player seat
             day: Current day number
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             (system_prompt, user_prompt)
         """
+        # Get public events
+        public_events = get_public_events(events_so_far or [], day, seat)
+        public_events_text = format_public_events(
+            public_events, context.living_players, context.dead_players, seat,
+        )
+
         # Level 1: Static system prompt
         system = get_death_last_words_system()
 
@@ -315,8 +338,11 @@ class DeathResolutionHandler:
             death_context=f"You died on Night {day} due to werewolf attack.",
         )
 
-        # Level 3: Decision prompt
-        decision = build_death_last_words_decision(state_context)
+        # Level 3: Decision prompt with public events
+        decision = build_death_last_words_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt
         user = decision.to_llm_prompt()
@@ -388,6 +414,7 @@ class DeathResolutionHandler:
         cause: DeathCause,
         day: int,
         participant: Optional[Participant] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> Optional[int]:
         """Get hunter shoot target from participant.
 
@@ -401,6 +428,7 @@ class DeathResolutionHandler:
             cause: DeathCause
             day: Current day number
             participant: Participant for AI query
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Hunter shoot target (None = skipped or not applicable)
@@ -416,12 +444,14 @@ class DeathResolutionHandler:
         if cause != DeathCause.WEREWOLF_KILL:
             return None
 
+        events_so_far = events_so_far or []
+
         # If no participant, use template
         if participant is None:
             return self._choose_hunter_shoot_target(context, seat)
 
         # Build prompts and choices
-        system, user = self._build_hunter_shoot_prompts(context, seat, day)
+        system, user = self._build_hunter_shoot_prompts(context, seat, day, events_so_far)
         choices = self._build_hunter_shoot_choices(context, seat)
 
         # Query participant with retries
@@ -449,6 +479,7 @@ class DeathResolutionHandler:
         context: "PhaseContext",
         hunter_seat: int,
         day: int,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> tuple[str, str]:
         """Build system and user prompts for hunter shoot decision.
 
@@ -456,10 +487,17 @@ class DeathResolutionHandler:
             context: Game state
             hunter_seat: Hunter's seat (dying)
             day: Current day number
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             (system_prompt, user_prompt)
         """
+        # Get public events
+        public_events = get_public_events(events_so_far or [], day, hunter_seat)
+        public_events_text = format_public_events(
+            public_events, context.living_players, context.dead_players, hunter_seat,
+        )
+
         # Level 1: Static system prompt
         system = get_death_hunter_shoot_system()
 
@@ -470,8 +508,11 @@ class DeathResolutionHandler:
             day=day,
         )
 
-        # Level 3: Decision prompt
-        decision = build_death_hunter_shoot_decision(state_context)
+        # Level 3: Decision prompt with public events
+        decision = build_death_hunter_shoot_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt
         user = decision.to_llm_prompt()
@@ -571,6 +612,7 @@ class DeathResolutionHandler:
         seat: int,
         day: int,
         participant: Optional[Participant] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> Optional[int]:
         """Get badge transfer target from participant.
 
@@ -579,6 +621,7 @@ class DeathResolutionHandler:
             seat: Dead player seat (potential Sheriff)
             day: Current day number
             participant: Participant for AI query
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Badge transfer target or None
@@ -590,12 +633,14 @@ class DeathResolutionHandler:
         if not player.is_sheriff:
             return None
 
+        events_so_far = events_so_far or []
+
         # If no participant, use template
         if participant is None:
             return self._choose_badge_heir(context, seat)
 
         # Build prompts
-        system, user = self._build_badge_transfer_prompts(context, seat, day)
+        system, user = self._build_badge_transfer_prompts(context, seat, day, events_so_far)
         choices = self._build_badge_transfer_choices(context, seat)
 
         # Query participant with retries
@@ -641,6 +686,7 @@ class DeathResolutionHandler:
         context: "PhaseContext",
         sheriff_seat: int,
         day: int,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> tuple[str, str]:
         """Build system and user prompts for badge transfer.
 
@@ -648,10 +694,17 @@ class DeathResolutionHandler:
             context: Game state
             sheriff_seat: Sheriff's seat (dying)
             day: Current day number
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             (system_prompt, user_prompt)
         """
+        # Get public events
+        public_events = get_public_events(events_so_far or [], day, sheriff_seat)
+        public_events_text = format_public_events(
+            public_events, context.living_players, context.dead_players, sheriff_seat,
+        )
+
         # Level 1: Static system prompt
         system = get_death_badge_transfer_system()
 
@@ -662,8 +715,11 @@ class DeathResolutionHandler:
             day=day,
         )
 
-        # Level 3: Decision prompt
-        decision = build_death_badge_transfer_decision(state_context)
+        # Level 3: Decision prompt with public events
+        decision = build_death_badge_transfer_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt
         user = decision.to_llm_prompt()

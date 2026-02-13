@@ -14,6 +14,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType
 from werewolf.prompt_levels import (
     get_opt_out_system,
@@ -109,17 +110,20 @@ class OptOutHandler:
         self,
         context: "PhaseContext",
         participants: Sequence[tuple[int, Participant]],
+        events_so_far: list[GameEvent] | None = None,
     ) -> HandlerResult:
         """Execute the OptOut subphase.
 
         Args:
             context: Game state with day and sheriff_candidates
             participants: Sequence of (seat, Participant) tuples for candidates
+            events_so_far: Previous events in the current day (for context)
 
         Returns:
             HandlerResult with SubPhaseLog containing SheriffOptOut events
         """
         events = []
+        events_so_far = events_so_far or []
 
         # Validate day is 1
         if context.day != 1:
@@ -152,7 +156,7 @@ class OptOutHandler:
             participant = participant_dict.get(seat)
             if participant:
                 should_opt_out = await self._get_valid_decision(
-                    context, participant, seat
+                    context, participant, seat, events_so_far
                 )
                 if should_opt_out:
                     events.append(SheriffOptOut(
@@ -185,16 +189,33 @@ class OptOutHandler:
         self,
         context: "PhaseContext",
         for_seat: int,
+        events_so_far: list[GameEvent] | None = None,
     ) -> tuple[str, str]:
         """Build filtered prompts for candidate.
 
         Args:
             context: Game state
             for_seat: The candidate seat to build prompts for
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        # Get public events using the visibility filter
+        public_events = get_public_events(
+            events_so_far or [],
+            context.day,
+            for_seat,
+        )
+
+        # Format public events for the prompt
+        public_events_text = format_public_events(
+            public_events,
+            context.living_players,
+            context.dead_players,
+            for_seat,
+        )
+
         # Level 1: Static system prompt (role rules only)
         system = get_opt_out_system()
 
@@ -202,7 +223,10 @@ class OptOutHandler:
         state_context = make_opt_out_context(context=context, your_seat=for_seat)
 
         # Level 3: Decision prompt
-        decision = build_opt_out_decision(state_context)
+        decision = build_opt_out_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt (combine Level 2 context + Level 3 decision)
         user = decision.to_llm_prompt()
@@ -230,6 +254,7 @@ class OptOutHandler:
         context: "PhaseContext",
         participant: Participant,
         for_seat: int,
+        events_so_far: list[GameEvent] | None = None,
     ) -> bool:
         """Get valid opt-out decision from participant with retry.
 
@@ -237,6 +262,7 @@ class OptOutHandler:
             context: Game state
             participant: The participant to query
             for_seat: The candidate seat making the decision
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             True if candidate opts out, False if they stay
@@ -244,8 +270,10 @@ class OptOutHandler:
         Raises:
             MaxRetriesExceededError: If max retries are exceeded
         """
+        events_so_far = events_so_far or []
+
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, for_seat)
+            system, user = self._build_prompts(context, for_seat, events_so_far)
 
             # Build choices for TUI rendering
             choices = self._build_choices()

@@ -14,6 +14,8 @@ Formatting functions:
 
 from typing import TYPE_CHECKING, Optional
 
+from werewolf.models.player import Role
+
 
 # =============================================================================
 # Formatting functions for PhaseContext
@@ -220,18 +222,24 @@ def make_guard_context(
 def make_seer_context(
     context: "PhaseContext",
     your_seat: int,
+    seer_checks: set[int] | None = None,
 ) -> dict:
     """Create Level 2 context for seer decision.
 
     Args:
         context: The phase context from handlers
         your_seat: The seer's seat
+        seer_checks: Set of seats already checked by the seer (to exclude)
 
     Returns:
         Dict with game state formatted for seer prompts
     """
     living_sorted = sorted(context.living_players)
+    # Seer cannot check themselves
     valid_targets = [s for s in living_sorted if s != your_seat]
+    # Filter out already checked players - no point rechecking them
+    if seer_checks:
+        valid_targets = [s for s in valid_targets if s not in seer_checks]
 
     return {
         "phase": "NIGHT",
@@ -241,6 +249,8 @@ def make_seer_context(
         "dead_seats": format_dead_seats(context),
         "sheriff_info": format_sheriff_info(context),
         "valid_targets": valid_targets,
+        # Include unchecked targets for filtering in choices
+        "unchecked_targets": valid_targets,
     }
 
 
@@ -330,6 +340,37 @@ def make_nomination_context(
     }
 
 
+def make_campaign_context(
+    context: "PhaseContext",
+    your_seat: int,
+    candidates: list[int],
+) -> dict:
+    """Create Level 2 context for campaign stay/opt-out decision.
+
+    Args:
+        context: The phase context from handlers
+        your_seat: The candidate's seat
+        candidates: List of all candidate seats (ordered)
+
+    Returns:
+        Dict with game state formatted for campaign opt-out prompts
+    """
+    other_candidates = [c for c in candidates if c != your_seat and context.is_alive(c)]
+    other_candidates_str = ', '.join(map(str, sorted(other_candidates))) if other_candidates else "None"
+
+    return {
+        "phase": "DAY",
+        "day": context.day,
+        "your_seat": your_seat,
+        "candidates": candidates,
+        "other_candidates": other_candidates,
+        "other_candidates_str": other_candidates_str,
+        "is_only_candidate": len(candidates) == 1 and candidates[0] == your_seat,
+        "living_players": sorted(context.living_players),
+        "dead_players": sorted(context.dead_players),
+    }
+
+
 def make_opt_out_context(
     context: "PhaseContext",
     your_seat: int,
@@ -362,6 +403,10 @@ def make_discussion_context(
     context: "PhaseContext",
     your_seat: int,
     speaking_order: list[int],
+    # Private history - per role specific
+    seer_checks: list[tuple[int, str, int]] | None = None,  # [(target, result, day), ...]
+    guard_prev_target: int | None = None,  # Last night's guard target
+    witch_potions: dict[str, int | None] | None = None,  # {"antidote": seat|None, "poison": seat|None}
 ) -> dict:
     """Create Level 2 context for discussion speech.
 
@@ -369,6 +414,9 @@ def make_discussion_context(
         context: The phase context from handlers
         your_seat: The speaker's seat
         speaking_order: List of all speakers in order
+        seer_checks: List of past seer checks [(target, result, day)]
+        guard_prev_target: Guard's target from last night
+        witch_potions: Dict of witch potion usage {"antidote": seat, "poison": seat}
 
     Returns:
         Dict with game state formatted for discussion prompts
@@ -386,6 +434,23 @@ def make_discussion_context(
         else:
             sheriff_info = f"Seat {context.sheriff} is the Sheriff (speaks LAST)"
 
+    # Count werewolves for strategy guidance
+    werewolf_count = sum(1 for seat in context.living_players if context.is_werewolf(seat))
+    living_count = len(context.living_players)
+    dead_count = len(context.dead_players)
+
+    # Build private info for each role
+    private_info = _build_discussion_private_info(
+        role=player.role if player else None,
+        your_seat=your_seat,
+        seer_checks=seer_checks,
+        guard_prev_target=guard_prev_target,
+        witch_potions=witch_potions,
+        living_count=living_count,
+        dead_count=dead_count,
+        werewolf_count=werewolf_count,
+    )
+
     return {
         "phase": "DAY",
         "day": context.day,
@@ -398,7 +463,137 @@ def make_discussion_context(
         "total": total,
         "sheriff_info": sheriff_info,
         "is_sheriff": context.sheriff == your_seat,
+        "private_info": private_info,
     }
+
+
+def _build_discussion_private_info(
+    role: "Role" | None,
+    your_seat: int,
+    seer_checks: list[tuple[int, str, int]] | None = None,
+    guard_prev_target: int | None = None,
+    witch_potions: dict[str, int | None] | None = None,
+    living_count: int = 0,
+    dead_count: int = 0,
+    werewolf_count: int = 0,
+) -> str:
+    """Build per-role private info section for discussion prompt.
+
+    Args:
+        role: Your role
+        your_seat: Your seat number
+        seer_checks: List of past seer checks [(target, result, day)]
+        guard_prev_target: Guard's target from last night
+        witch_potions: Dict of witch potion usage
+        living_count: Number of living players
+        dead_count: Number of dead players
+        werewolf_count: Number of living werewolves
+
+    Returns:
+        Formatted private info string with strategy guidance
+    """
+    if role is None:
+        return ""
+
+    info_parts = []
+
+    # Strategy guidance based on role
+    info_parts.append(_get_role_strategy(role, living_count, dead_count, werewolf_count, witch_potions))
+
+    # Private history based on role
+    if role == Role.SEER and seer_checks:
+        info_parts.append("\nYOUR SEER CHECKS:")
+        for target, result, day in seer_checks:
+            marker = " (last night)" if day == seer_checks[-1][2] else ""
+            info_parts.append(f"  Night {day}: Seat {target} = {result}{marker}")
+
+    elif role == Role.GUARD and guard_prev_target is not None:
+        info_parts.append(f"\nLAST NIGHT: You protected seat {guard_prev_target}")
+
+    elif role == Role.WITCH and witch_potions:
+        info_parts.append("\nYOUR POTIONS:")
+        if witch_potions.get("antidote") is not None:
+            info_parts.append(f"  Antidote: Used on seat {witch_potions['antidote']}")
+        else:
+            info_parts.append("  Antidote: Available (1 remaining)")
+        if witch_potions.get("poison") is not None:
+            info_parts.append(f"  Poison: Used on seat {witch_potions['poison']}")
+        else:
+            info_parts.append("  Poison: Available (1 remaining)")
+
+    return "\n".join(info_parts)
+
+
+def _get_role_strategy(
+    role: Role,
+    living_count: int,
+    dead_count: int,
+    werewolf_count: int,
+    witch_potions: dict[str, int | None] | None = None,
+) -> str:
+    """Get strategy guidance based on role and game state.
+
+    Args:
+        role: Your role
+        living_count: Number of living players
+        dead_count: Number of dead players
+        werewolf_count: Number of living werewolves
+        witch_potions: Dict of witch potion usage (only for witch role)
+
+    Returns:
+        Formatted strategy guidance string
+    """
+    strategies = []
+
+    if role == Role.WEREWOLF:
+        strategies.append("STRATEGY (WEREWOLF):")
+        strategies.append("  - Coordinate with fellow werewolves to kill key good roles")
+        strategies.append("  - Keep your identity hidden as long as possible")
+        strategies.append("  - Blend in with ordinary villagers or claim god roles with convincing evidence")
+        strategies.append("  - Vote strategically to eliminate confirmed goods")
+        if living_count <= 7:
+            strategies.append("  - Late game: push for kills when numbers favor werewolves")
+
+    elif role == Role.SEER:
+        strategies.append("STRATEGY (SEER):")
+        strategies.append("  - Reveal strategically when you have concrete evidence")
+        strategies.append("  - Share findings to gain trust from villagers")
+        strategies.append("  - Consider hiding info if revealing would get you killed")
+        if werewolf_count == 1:
+            strategies.append("  - Only 1 werewolf left! Push for conviction.")
+        elif werewolf_count == 0:
+            strategies.append("  - All werewolves eliminated - victory secured!")
+
+    elif role == Role.WITCH:
+        strategies.append("STRATEGY (WITCH):")
+        strategies.append("  - Save the antidote for critical moments (don't waste it)")
+        strategies.append("  - Use poison strategically to eliminate threats")
+        strategies.append("  - Your identity is powerful - reveal carefully")
+        if witch_potions is not None and (witch_potions.get("antidote") is None or witch_potions.get("poison") is None):
+            strategies.append("  - You still have potions - plan their use")
+
+    elif role == Role.GUARD:
+        strategies.append("STRATEGY (GUARD):")
+        strategies.append("  - Protect key roles (Seer, Witch) from werewolf kills")
+        strategies.append("  - Alternate targets to avoid werewolf predictions")
+        strategies.append("  - Your guarding pattern matters - stay unpredictable")
+        strategies.append("  - Communicate protection status subtly if needed")
+
+    elif role == Role.HUNTER:
+        strategies.append("STRATEGY (HUNTER):")
+        strategies.append("  - Your final shot is powerful - save it for a werewolf")
+        strategies.append("  - Act confident to avoid suspicion")
+        strategies.append("  - If voted out, choose your target wisely")
+        strategies.append("  - Blend in while gathering information")
+
+    else:  # Ordinary Villager
+        strategies.append("STRATEGY (VILLAGER):")
+        strategies.append("  - Analyze speeches for inconsistencies")
+        strategies.append("  - Trust confirmed information from Seer/Witch")
+        strategies.append("  - Vote to eliminate suspected werewolves")
+        strategies.append("  - Stay alert for role claims and verify them")
+
+    return "\n".join(strategies)
 
 
 def make_death_last_words_context(

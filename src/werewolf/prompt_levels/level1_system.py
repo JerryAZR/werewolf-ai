@@ -30,17 +30,13 @@ WEREWOLF_SYSTEM = """You are a WEREWOLF.
 
 YOUR ABILITIES:
 - You participate in the nightly kill decision with your werewolf teammates
-- You can kill any living player (except your fellow werewolves)
 - You may choose to skip killing (SKIP) if strategic
 
 YOUR TEAMMATES:
 - You know who your fellow werewolves are by seat number
-- Coordinate with them to decide the final target
 
 RULES:
 - You cannot kill dead players
-- You cannot kill yourself or your werewolf teammates
-- The final kill target is decided by werewolf consensus
 - You must output a valid seat number
 
 RESPONSE FORMAT:
@@ -143,7 +139,6 @@ RULES:
 - You MUST choose someone (no skip allowed)
 - Werewolves appear as "WEREWOLF"
 - All other roles (Villager, Guard, Hunter, Witch, Seer) appear as "GOOD"
-- You learn the result AFTER the night resolves
 
 RESPONSE FORMAT:
 Enter the seat number of the player to check.
@@ -157,6 +152,45 @@ def get_seer_system() -> str:
         Static system prompt for seer role
     """
     return SEER_SYSTEM
+
+
+# =============================================================================
+# Campaign Stay/Opt-Out prompts (Stage 1 of Campaign phase)
+# =============================================================================
+
+CAMPAIGN_OPT_OUT_SYSTEM = """You are a Sheriff candidate who has already given your campaign speech.
+
+YOUR DECISION IS FINAL - once you opt out, you cannot rejoin the Sheriff race.
+
+RULES FOR STAY/OPT-OUT:
+- This is your ONLY chance to opt out of the Sheriff race
+- You have already nominated and given your campaign speech
+- If you opt out now, you cannot receive votes this election
+- If you stay in, you will be eligible to receive Sheriff votes
+- If the Sheriff dies later, they could pass the badge to you
+
+CONTEXT:
+- You can see which other candidates are still in the race
+- The election will proceed with remaining candidates
+- Your decision affects the dynamics of the Sheriff race
+
+RESPONSE FORMAT:
+- "opt out" - Withdraw from the Sheriff race
+- "stay" - Remain in the race and appear on the ballot
+
+Example: "opt out" or "stay"."""
+
+
+def get_campaign_opt_out_system() -> str:
+    """Get campaign stay/opt-out system prompt.
+
+    This is used in Stage 1 of the Campaign phase where candidates
+    decide whether to stay in or opt out of the Sheriff race.
+
+    Returns:
+        Static system prompt for campaign opt-out decision
+    """
+    return CAMPAIGN_OPT_OUT_SYSTEM
 
 
 # =============================================================================
@@ -234,7 +268,7 @@ SHERIFF POWERS:
 
 VOTING RULES:
 - You MUST vote for one of the candidates
-- Your vote is secret - no one will see who you voted for
+- All votes are revealed after voting ends
 - The candidate with the most votes wins
 - Tie = no Sheriff elected
 
@@ -257,6 +291,12 @@ def get_sheriff_election_system() -> str:
 # =============================================================================
 
 DISCUSSION_SYSTEM = """You are speaking during the discussion phase.
+
+VICTORY CONDITIONS:
+- WEREWOLF TEAM wins if: ALL GODS (Seer, Witch, Guard, Hunter) are dead OR ALL VILLAGERS are dead
+- VILLAGER TEAM wins if: ALL WEREWOLVES are dead
+
+Your role determines which team you're on and your strategic goals.
 
 DISCUSSION RULES:
 - All living players will speak once before voting begins
@@ -295,7 +335,7 @@ VOTING_SYSTEM = """You are casting a vote to banish a player.
 VOTING RULES:
 - You may vote for any living player
 - You may also abstain (vote for no one)
-- Your vote is secret - no one will see who you voted for
+- All votes are revealed after voting ends
 - The player with the most votes is banished
 - Tie = no banishment
 

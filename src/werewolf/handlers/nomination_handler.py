@@ -13,6 +13,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.models.player import Player, Role
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType
 from werewolf.prompt_levels import (
@@ -117,17 +118,20 @@ class NominationHandler:
         self,
         context: "PhaseContext",
         participants: Sequence[tuple[int, Participant]],
+        events_so_far: list[GameEvent] | None = None,
     ) -> HandlerResult:
         """Execute the Nomination subphase.
 
         Args:
             context: Game state with players, living/dead, sheriff, day
             participants: Sequence of (seat, Participant) tuples for all players
+            events_so_far: Previous events in the current day (for context)
 
         Returns:
             HandlerResult with SubPhaseLog containing SheriffNomination events
         """
         events = []
+        events_so_far = events_so_far or []
 
         # Validate day == 1
         if context.day != 1:
@@ -150,6 +154,7 @@ class NominationHandler:
                     context=context,
                     participant=participant,
                     for_seat=seat,
+                    events_so_far=events_so_far,
                 )
                 if decision is not None:
                     events.append(decision)
@@ -175,16 +180,33 @@ class NominationHandler:
         self,
         context: "PhaseContext",
         for_seat: int,
+        events_so_far: list[GameEvent] | None = None,
     ) -> tuple[str, str]:
         """Build filtered prompts for nomination decision.
 
         Args:
             context: Game state
             for_seat: The player seat to build prompts for
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        # Get public events using the visibility filter
+        public_events = get_public_events(
+            events_so_far or [],
+            context.day,
+            for_seat,
+        )
+
+        # Format public events for the prompt
+        public_events_text = format_public_events(
+            public_events,
+            context.living_players,
+            context.dead_players,
+            for_seat,
+        )
+
         # Level 1: Static system prompt (role rules only)
         system = get_nomination_system()
 
@@ -196,7 +218,11 @@ class NominationHandler:
         role_name = player.role.value if player else "Unknown"
 
         # Level 3: Decision prompt
-        decision = build_nomination_decision(state_context, role=role_name)
+        decision = build_nomination_decision(
+            state_context,
+            role=role_name,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt (combine Level 2 context + Level 3 decision)
         user = decision.to_llm_prompt()
@@ -224,6 +250,7 @@ class NominationHandler:
         context: "PhaseContext",
         participant: Participant,
         for_seat: int,
+        events_so_far: list[GameEvent] | None = None,
     ) -> Optional[SheriffNomination]:
         """Get valid nomination decision from participant with retry.
 
@@ -235,6 +262,7 @@ class NominationHandler:
             context: Game state
             participant: The participant to query
             for_seat: The player's seat
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             SheriffNomination event with running=True/False
@@ -243,7 +271,7 @@ class NominationHandler:
         choices = self._build_choices()
 
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, for_seat)
+            system, user = self._build_prompts(context, for_seat, events_so_far)
 
             # Add hint for retry attempts
             hint = None

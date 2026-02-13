@@ -126,11 +126,14 @@ class NightScheduler:
         # Build PhaseContext for handlers
         context = self._build_phase_context(state)
 
+        # Get events so far for public visibility filtering
+        events_so_far = collector.get_events()
+
         # Step 1: WerewolfAction
         werewolf_participants = self._extract_role_participants(
             participants, state, Role.WEREWOLF
         )
-        ww_result = await self._run_werewolf_action(context, werewolf_participants)
+        ww_result = await self._run_werewolf_action(context, werewolf_participants, events_so_far)
         collector.add_subphase_log(ww_result.subphase_log)
 
         # Hook: subphase end - WerewolfAction
@@ -151,7 +154,10 @@ class NightScheduler:
         if self._validator:
             await self._validator.on_subphase_start(SubPhase.WITCH_ACTION, state.day, state)
 
-        witch_result = await self._run_witch_action(context, witch_participants, night_actions)
+        # Update events_so_far with werewolf action events
+        events_so_far = collector.get_events()
+
+        witch_result = await self._run_witch_action(context, witch_participants, night_actions, events_so_far)
         collector.add_subphase_log(witch_result.subphase_log)
 
         # Hook: subphase end - WitchAction
@@ -172,8 +178,11 @@ class NightScheduler:
         if self._validator:
             await self._validator.on_subphase_start(SubPhase.GUARD_ACTION, state.day, state)
 
+        # Update events_so_far with witch action events
+        events_so_far = collector.get_events()
+
         guard_result = await self._run_guard_action(
-            context, guard_participants, night_actions
+            context, guard_participants, night_actions, events_so_far
         )
         collector.add_subphase_log(guard_result.subphase_log)
 
@@ -186,6 +195,9 @@ class NightScheduler:
         # Update guard_target from guard action
         self._update_guard_target(guard_result, night_actions)
 
+        # Update events_so_far with guard action events
+        events_so_far = collector.get_events()
+
         seer_participants = self._extract_role_participants(
             participants, state, Role.SEER
         )
@@ -194,8 +206,12 @@ class NightScheduler:
         if self._validator:
             await self._validator.on_subphase_start(SubPhase.SEER_ACTION, state.day, state)
 
-        seer_result = await self._run_seer_action(context, seer_participants)
+        # Pass seer_checks from persistent state
+        seer_result = await self._run_seer_action(context, seer_participants, night_actions.seer_checks, events_so_far)
         collector.add_subphase_log(seer_result.subphase_log)
+
+        # Update seer_checks with the target (track all checked players)
+        self._update_seer_check(seer_result, night_actions)
 
         # Hook: subphase end - SeerAction
         if self._validator:
@@ -271,11 +287,12 @@ class NightScheduler:
         self,
         context: WerewolfPhaseContext,
         participants: dict[int, Participant],
+        events_so_far: list[GameEvent],
     ) -> WerewolfHandlerResult:
         """Run werewolf action subphase."""
         try:
             return await self._werewolf_handler(
-                context, list(participants.items())
+                context, list(participants.items()), events_so_far
             )
         except MaxRetriesExceededError:
             # If werewolves fail to decide after retries, return empty result (skip kill)
@@ -294,6 +311,7 @@ class NightScheduler:
         context: WerewolfPhaseContext,
         participants: dict[int, Participant],
         night_actions: NightActionStore,
+        events_so_far: list[GameEvent],
     ) -> WitchHandlerResult:
         """Run witch action subphase."""
         # Convert NightActionStore to WitchNightActions format
@@ -305,7 +323,7 @@ class NightScheduler:
 
         try:
             return await self._witch_handler(
-                context, list(participants.items()), witch_night_actions
+                context, list(participants.items()), witch_night_actions, events_so_far
             )
         except MaxRetriesExceededError:
             # If witch fails to decide after retries, return empty result (pass)
@@ -324,6 +342,7 @@ class NightScheduler:
         context: WerewolfPhaseContext,
         participants: dict[int, Participant],
         night_actions: NightActionStore,
+        events_so_far: list[GameEvent],
     ) -> GuardHandlerResult:
         """Run guard action subphase."""
         try:
@@ -331,6 +350,7 @@ class NightScheduler:
                 context,
                 list(participants.items()),
                 guard_prev_target=night_actions.guard_prev_target,
+                events_so_far=events_so_far,
             )
         except MaxRetriesExceededError:
             # If guard fails to decide after retries, return empty result (skip)
@@ -348,10 +368,12 @@ class NightScheduler:
         self,
         context: WerewolfPhaseContext,
         participants: dict[int, Participant],
+        seer_checks: set[int],
+        events_so_far: list[GameEvent],
     ) -> SeerHandlerResult:
         """Run seer action subphase."""
         try:
-            return await self._seer_handler(context, list(participants.items()))
+            return await self._seer_handler(context, list(participants.items()), seer_checks, events_so_far)
         except MaxRetriesExceededError:
             # If seer fails to decide after retries, return empty result (skip)
             from werewolf.events import SubPhase
@@ -416,6 +438,18 @@ class NightScheduler:
                 actions.guard_target = event.target
                 break
 
+    def _update_seer_check(
+        self, result: SeerHandlerResult, actions: NightActionStore
+    ) -> None:
+        """Track seer's checked target in persistent state."""
+        from werewolf.events.game_events import SeerAction
+
+        for event in result.subphase_log.events:
+            if isinstance(event, SeerAction):
+                # Add to set of checked players
+                actions.seer_checks.add(event.target)
+                break
+
     def _update_actions_persistent_state(
         self,
         original: NightActionStore,
@@ -427,6 +461,7 @@ class NightScheduler:
             antidote_used=updated.antidote_used,
             poison_used=updated.poison_used,
             guard_prev_target=updated.guard_target,  # Tonight's guard target becomes prev for next night
+            seer_checks=updated.seer_checks.copy(),  # Preserve seer check history
             kill_target=None,  # Reset ephemeral targets
             antidote_target=None,
             poison_target=None,

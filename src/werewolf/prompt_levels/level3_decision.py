@@ -158,11 +158,13 @@ class Choice:
 
 def build_werewolf_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for werewolf kill.
 
     Args:
         context: Level 2 context dict from make_werewolf_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for werewolf kill
@@ -177,6 +179,10 @@ def build_werewolf_decision(
 
     # Build question with game state
     question = f"[Werewolf - Night {context['day']}]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"Teammates: {context['teammate_seats_formatted']}\n"
     question += f"\nLiving players: {context['living_seats']}\n"
@@ -191,11 +197,13 @@ def build_werewolf_decision(
 
 def build_witch_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for witch action.
 
     Args:
         context: Level 2 context dict from make_witch_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for witch action
@@ -228,6 +236,10 @@ def build_witch_decision(
 
     # Build question with game state
     question = f"[Witch - Night {context['day']}]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"Antidote: {context['antidote_display']}\n"
     question += f"Poison: {context['poison_display']}\n"
@@ -246,11 +258,13 @@ def build_witch_decision(
 
 def build_guard_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for guard protection.
 
     Args:
         context: Level 2 context dict from make_guard_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for guard action
@@ -266,6 +280,10 @@ def build_guard_decision(
 
     # Build question with game state
     question = f"[Guard - Night {context['day']}]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"\nLiving players: {context['living_seats']}\n"
 
@@ -283,11 +301,13 @@ def build_guard_decision(
 
 def build_seer_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for seer check.
 
     Args:
         context: Level 2 context dict from make_seer_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for seer check
@@ -299,6 +319,10 @@ def build_seer_decision(
 
     # Build question with game state
     question = f"[Seer - Night {context['day']}]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"\nLiving players: {context['living_seats']}\n"
     question += context["sheriff_info"]
@@ -311,15 +335,61 @@ def build_seer_decision(
     )
 
 
+def build_campaign_opt_out_decision(
+    context: dict,
+    public_events_text: str = "",
+) -> DecisionPrompt:
+    """Build decision prompt for campaign stay/opt-out (Stage 1).
+
+    This is called after a candidate has already given their campaign speech
+    and now must decide whether to stay in or opt out of the Sheriff race.
+
+    Args:
+        context: Level 2 context dict containing campaign info
+        public_events_text: Formatted public events (deaths, etc.)
+
+    Returns:
+        DecisionPrompt for stay/opt-out decision
+    """
+    day = context["day"]
+    your_seat = context["your_seat"]
+    other_candidates = context.get("other_candidates_str", "None")
+
+    question = f"[Sheriff Campaign - Stay/Opt-Out - Day {day}]\n\n"
+    question += f"Your seat: {your_seat}\n"
+
+    if context.get("is_only_candidate"):
+        question += "\nYou are the only candidate remaining!\n"
+        question += "If you opt out, there will be no Sheriff election.\n"
+    else:
+        question += f"\nOther candidates: {other_candidates}\n"
+
+    # Add public events if any
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
+    return DecisionPrompt(
+        question=question,
+        choices=[
+            Choice(value="stay", display="Stay", description="Remain in Sheriff race"),
+            Choice(value="opt-out", display="Opt Out", description="Withdraw from Sheriff race"),
+        ],
+        response_format='Enter "stay" or "opt-out":',
+        hint='Use exactly "stay" or "opt-out"',
+    )
+
+
 def build_nomination_decision(
     context: dict,
     role: str,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for sheriff nomination.
 
     Args:
         context: Level 2 context dict
         role: The player's role name
+        public_events_text: Formatted public events (deaths, previous events)
 
     Returns:
         DecisionPrompt for nomination
@@ -329,6 +399,10 @@ def build_nomination_decision(
     question += f"Your role: {role}\n"
     question += f"\nLiving players: {context['living_seats']}\n"
     question += context["sheriff_info"]
+
+    # Add public events
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
 
     return DecisionPrompt(
         question=question,
@@ -342,11 +416,13 @@ def build_nomination_decision(
 
 def build_voting_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for banishment voting.
 
     Args:
         context: Level 2 context dict from make_voting_context()
+        public_events_text: Formatted public events (deaths, speeches, sheriff info)
 
     Returns:
         DecisionPrompt for voting
@@ -367,6 +443,10 @@ def build_voting_decision(
     question += f"Your seat: {context['your_seat']}{sheriff_note}\n"
     question += f"\nLiving players: {context['living_seats']}\n"
 
+    # Add public events (deaths, previous speeches, sheriff outcome)
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     return DecisionPrompt(
         question=question,
         choices=choices,
@@ -377,12 +457,14 @@ def build_voting_decision(
 def build_sheriff_election_decision(
     context: dict,
     candidates: list[int],
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for sheriff election.
 
     Args:
         context: Level 2 context dict from make_sheriff_election_context()
         candidates: List of candidate seats
+        public_events_text: Formatted public events (deaths, speeches, etc.)
 
     Returns:
         DecisionPrompt for sheriff election
@@ -401,6 +483,10 @@ def build_sheriff_election_decision(
     question += f"Your seat: {context['your_seat']}{sheriff_note}\n"
     question += f"\nCandidates: {', '.join(map(str, candidates))}\n"
 
+    # Add public events
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     return DecisionPrompt(
         question=question,
         choices=choices,
@@ -410,11 +496,13 @@ def build_sheriff_election_decision(
 
 def build_opt_out_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for sheriff candidate opt-out.
 
     Args:
         context: Level 2 context dict from make_opt_out_context()
+        public_events_text: Formatted public events (deaths, speeches, etc.)
 
     Returns:
         DecisionPrompt for opt-out decision
@@ -428,6 +516,10 @@ def build_opt_out_decision(
     else:
         question += f"\nOther candidates: {context['other_candidates_str']}\n"
 
+    # Add public events
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     return DecisionPrompt(
         question=question,
         choices=[
@@ -440,15 +532,13 @@ def build_opt_out_decision(
 
 def build_discussion_decision(
     context: dict,
-    previous_speeches_text: str = "",
-    last_words_text: str = "",
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for discussion speech.
 
     Args:
         context: Level 2 context dict from make_discussion_context()
-        previous_speeches_text: Text of previous speeches this phase
-        last_words_text: Text of last words from morning deaths
+        public_events_text: Formatted public events (deaths, speeches, sheriff info)
 
     Returns:
         DecisionPrompt for discussion speech
@@ -456,18 +546,20 @@ def build_discussion_decision(
     question = f"[Discussion - Day {context['day']}]\n\n"
     question += f"Your seat: {context['your_seat']}\n"
     question += f"Your role: {context['role']}\n"
-    question += f"\nSpeaking order: {context['position']} of {context['total']}\n"
     question += f"\nLiving players: {context['living_seats']}\n"
     question += f"Dead players: {context['dead_seats']}\n"
 
     if context["sheriff_info"]:
         question += f"\n{context['sheriff_info']}\n"
 
-    if previous_speeches_text:
-        question += f"\n{previous_speeches_text}"
+    # Add public events (deaths, previous speeches, sheriff outcome)
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
 
-    if last_words_text:
-        question += f"\n{last_words_text}"
+    # Add private info if present (role-specific history)
+    private_info = context.get("private_info", "")
+    if private_info:
+        question += f"\n{private_info}\n"
 
     return DecisionPrompt(
         question=question,
@@ -478,16 +570,22 @@ def build_discussion_decision(
 
 def build_death_last_words_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for death last words.
 
     Args:
         context: Level 2 context dict from make_death_last_words_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for last words
     """
     question = f"[Final Words - Night {context['day']}]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"Your role: {context['role']}\n"
     question += f"\n{context['death_context']}\n"
@@ -503,16 +601,22 @@ def build_death_last_words_decision(
 
 def build_death_hunter_shoot_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for death (hunter) shoot action.
 
     Args:
         context: Level 2 context dict from make_death_hunter_shoot_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for hunter shoot
     """
     question = f"[Hunter's Final Shot - Night {context['day']}]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"\nLiving players: {context['living_seats_str']}\n"
     question += f"\n{context['werewolf_hint']}\n"
@@ -532,16 +636,22 @@ def build_death_hunter_shoot_decision(
 
 def build_death_badge_transfer_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for death (sheriff) badge transfer.
 
     Args:
         context: Level 2 context dict from make_death_badge_transfer_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for badge transfer
     """
     question = f"[Sheriff Badge Transfer - Night {context['day']}]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"\nLiving players: {context['living_seats_str']}\n"
     question += f"\n{context['trusted_hint']}\n"
@@ -561,16 +671,22 @@ def build_death_badge_transfer_decision(
 
 def build_banishment_last_words_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for banishment last words.
 
     Args:
         context: Level 2 context dict from make_banishment_last_words_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for last words
     """
     question = f"[Final Words - Day {context['day']} Banishment]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"Your role: {context['role']}\n"
     question += f"\n{context['death_context']}\n"
@@ -586,16 +702,22 @@ def build_banishment_last_words_decision(
 
 def build_banishment_hunter_shoot_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for banishment (hunter) shoot action.
 
     Args:
         context: Level 2 context dict from make_banishment_hunter_shoot_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for hunter shoot
     """
     question = f"[Hunter's Final Shot - Day {context['day']} Banishment]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"\nLiving players: {context['living_seats_str']}\n"
     question += f"\n{context['werewolf_hint']}\n"
@@ -615,16 +737,22 @@ def build_banishment_hunter_shoot_decision(
 
 def build_banishment_badge_transfer_decision(
     context: dict,
+    public_events_text: str = "",
 ) -> DecisionPrompt:
     """Build decision prompt for banishment (sheriff) badge transfer.
 
     Args:
         context: Level 2 context dict from make_banishment_badge_transfer_context()
+        public_events_text: Formatted public events text for visibility
 
     Returns:
         DecisionPrompt for badge transfer
     """
     question = f"[Sheriff Badge Transfer - Day {context['day']} Banishment]\n\n"
+
+    if public_events_text:
+        question += f"\n{public_events_text}\n"
+
     question += f"Your seat: {context['your_seat']}\n"
     question += f"\nLiving players: {context['living_seats_str']}\n"
     question += f"\n{context['trusted_hint']}\n"

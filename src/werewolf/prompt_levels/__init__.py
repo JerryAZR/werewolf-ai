@@ -23,6 +23,7 @@ from werewolf.prompt_levels.level1_system import (
     get_seer_system,
     # Day phase
     get_nomination_system,
+    get_campaign_opt_out_system,
     get_opt_out_system,
     get_sheriff_election_system,
     get_discussion_system,
@@ -52,6 +53,7 @@ from werewolf.prompt_levels.level2_state import (
     make_voting_context,
     make_sheriff_election_context,
     make_nomination_context,
+    make_campaign_context,
     make_opt_out_context,
     make_discussion_context,
     # Death resolution
@@ -76,6 +78,7 @@ from werewolf.prompt_levels.level3_decision import (
     build_guard_decision,
     build_seer_decision,
     build_nomination_decision,
+    build_campaign_opt_out_decision,
     build_voting_decision,
     build_sheriff_election_decision,
     build_opt_out_decision,
@@ -97,6 +100,7 @@ __all__ = [
     "get_guard_system",
     "get_seer_system",
     "get_nomination_system",
+    "get_campaign_opt_out_system",
     "get_opt_out_system",
     "get_sheriff_election_system",
     "get_discussion_system",
@@ -121,6 +125,7 @@ __all__ = [
     "make_voting_context",
     "make_sheriff_election_context",
     "make_nomination_context",
+    "make_campaign_context",
     "make_opt_out_context",
     "make_discussion_context",
     # Death resolution
@@ -142,6 +147,7 @@ __all__ = [
     "build_guard_decision",
     "build_seer_decision",
     "build_nomination_decision",
+    "build_campaign_opt_out_decision",
     "build_voting_decision",
     "build_sheriff_election_decision",
     "build_opt_out_decision",

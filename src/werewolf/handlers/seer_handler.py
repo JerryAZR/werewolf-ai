@@ -5,7 +5,7 @@ check a player's identity to see if they are a werewolf.
 """
 
 import re
-from typing import Protocol, Sequence, Optional, Any
+from typing import Protocol, Sequence, Optional, Any, Set
 from pydantic import BaseModel, Field
 
 from werewolf.events.game_events import (
@@ -15,6 +15,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.models.player import Player, Role
 from werewolf.prompt_levels import (
     get_seer_system,
@@ -128,6 +129,8 @@ class SeerHandler:
         self,
         context: "PhaseContext",
         participants: Sequence[tuple[int, Participant]],
+        seer_checks: Optional[Set[int]] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> HandlerResult:
         """Execute the SeerAction subphase.
 
@@ -135,11 +138,14 @@ class SeerHandler:
             context: Game state with players, living/dead, sheriff
             participants: Sequence of (seat, Participant) tuples
                          Should contain at most one entry (the seer)
+            seer_checks: Set of seats already checked by the seer (to exclude)
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             HandlerResult with SubPhaseLog containing SeerAction event
         """
         events = []
+        events_so_far = events_so_far or []
 
         # Find living seer seat
         seer_seat = None
@@ -189,11 +195,30 @@ class SeerHandler:
                 ),
             )
 
+        # Check if there are any valid targets to check
+        # (all other living players may have already been checked)
+        state_context_for_check = make_seer_context(
+            context=context,
+            your_seat=seer_seat,
+            seer_checks=seer_checks,
+        )
+        if not state_context_for_check.get("valid_targets"):
+            # All other players have been checked, skip seer action
+            return HandlerResult(
+                subphase_log=SubPhaseLog(
+                    micro_phase=SubPhase.SEER_ACTION,
+                    events=[],
+                ),
+                debug_info="All other players already checked, seer skips",
+            )
+
         # Query seer for valid target
         action = await self._get_valid_action(
             context=context,
             participant=participant,
             seer_seat=seer_seat,
+            seer_checks=seer_checks,
+            events_so_far=events_so_far,
         )
 
         events.append(action)
@@ -209,16 +234,28 @@ class SeerHandler:
         self,
         context: "PhaseContext",
         for_seat: int,
+        seer_checks: Optional[Set[int]] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> tuple[str, str]:
         """Build filtered prompts for the seer.
 
         Args:
             context: Game state
             for_seat: The seer seat to build prompts for
+            seer_checks: Set of seats already checked by the seer
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        events_so_far = events_so_far or []
+
+        # Get public events
+        public_events = get_public_events(events_so_far, context.day, for_seat)
+        public_events_text = format_public_events(
+            public_events, context.living_players, context.dead_players, for_seat,
+        )
+
         # Get static system prompt (Level 1)
         system = get_seer_system()
 
@@ -226,10 +263,14 @@ class SeerHandler:
         state_context = make_seer_context(
             context=context,
             your_seat=for_seat,
+            seer_checks=seer_checks,
         )
 
-        # Build decision prompt (Level 3)
-        decision = build_seer_decision(state_context)
+        # Build decision prompt (Level 3) with public events
+        decision = build_seer_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Use LLM format for user prompt
         user = decision.to_llm_prompt()
@@ -240,15 +281,19 @@ class SeerHandler:
         self,
         context: "PhaseContext",
         seer_seat: int,
+        seer_checks: Optional[Set[int]] = None,
     ) -> Optional[Any]:
         """Build ChoiceSpec for interactive TUI.
 
-        Returns ChoiceSpec with valid targets (excluding self).
+        Returns ChoiceSpec with valid targets (excluding self and already checked).
         """
         make_seat_choice = _get_choice_spec_helpers()
 
         # Build list of valid targets (all living except self)
         valid_targets = [p for p in sorted(context.living_players) if p != seer_seat]
+        # Filter out already checked players - no point rechecking them
+        if seer_checks:
+            valid_targets = [p for p in valid_targets if p not in seer_checks]
 
         return make_seat_choice(
             prompt="Choose a player to check:",
@@ -261,6 +306,8 @@ class SeerHandler:
         context: "PhaseContext",
         participant: Participant,
         seer_seat: int,
+        seer_checks: Optional[Set[int]] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> SeerAction:
         """Get valid target from seer participant with retry.
 
@@ -268,6 +315,8 @@ class SeerHandler:
             context: Game state
             participant: The participant to query
             seer_seat: The seer's seat
+            seer_checks: Set of seats already checked by the seer
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Valid SeerAction event (result will be computed by engine)
@@ -275,11 +324,13 @@ class SeerHandler:
         Raises:
             MaxRetriesExceededError: If max retries are exceeded
         """
+        events_so_far = events_so_far or []
+
         # Build ChoiceSpec with valid targets
-        choices = self.build_choice_spec(context, seer_seat)
+        choices = self.build_choice_spec(context, seer_seat, seer_checks)
 
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, seer_seat)
+            system, user = self._build_prompts(context, seer_seat, seer_checks, events_so_far)
 
             # Add hint for retry attempts
             hint = None

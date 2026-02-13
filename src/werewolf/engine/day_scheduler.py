@@ -229,6 +229,7 @@ class DayScheduler:
         discussion_result = await self._run_discussion(
             state=state,
             participants=all_participants,
+            collector=collector,
         )
         collector.add_subphase_log(discussion_result.subphase_log)
         state.apply_events(discussion_result.subphase_log.events)
@@ -389,18 +390,21 @@ class DayScheduler:
             deaths=deaths,
         )
         # Use DEATH_RESOLUTION micro_phase since this runs during DAY phase
-        return await handler(context, night_outcome, participants, SubPhase.DEATH_RESOLUTION)
+        return await handler(context, night_outcome, participants, None, SubPhase.DEATH_RESOLUTION)
 
     async def _run_discussion(
         self,
         state: GameState,
         participants: Sequence[tuple[int, Participant]],
+        collector: EventCollector,
     ) -> "HandlerResult":
         """Run Discussion subphase."""
         from werewolf.handlers.discussion_handler import DiscussionHandler, HandlerResult
         handler = DiscussionHandler()
         context = self._build_context(state)
-        return await handler(context, participants)
+        # Get all events for private history extraction
+        events_so_far = collector.get_events()
+        return await handler(context, participants, events_so_far)
 
     async def _run_voting(
         self,

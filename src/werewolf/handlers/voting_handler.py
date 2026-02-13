@@ -20,6 +20,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType, make_seat_choice
 from werewolf.prompt_levels import (
     get_voting_system,
@@ -151,6 +152,7 @@ class VotingHandler:
                     participant=participant,
                     voter_seat=seat,
                     living_players=context.living_players,
+                    events_so_far=events_so_far,
                 )
 
                 # Calculate vote weight (Sheriff = 1.5, others = 1.0)
@@ -259,6 +261,7 @@ class VotingHandler:
         context: "PhaseContext",
         voter_seat: int,
         living_players: set[int],
+        events_so_far: list[GameEvent] | None = None,
     ) -> tuple[str, str]:
         """Build filtered prompts for voter.
 
@@ -266,18 +269,37 @@ class VotingHandler:
             context: Game state
             voter_seat: The voter seat number
             living_players: Set of living player seats
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        # Get public events using the visibility filter
+        public_events = get_public_events(
+            events_so_far or [],
+            context.day,
+            voter_seat,
+        )
+
+        # Format public events for the prompt
+        public_events_text = format_public_events(
+            public_events,
+            context.living_players,
+            context.dead_players,
+            voter_seat,
+        )
+
         # Level 1: Static system prompt (role rules only)
         system = get_voting_system()
 
         # Level 2: Game state context
         state_context = make_voting_context(context=context, your_seat=voter_seat)
 
-        # Level 3: Decision prompt
-        decision = build_voting_decision(state_context)
+        # Level 3: Decision prompt with public events
+        decision = build_voting_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt (combine Level 2 context + Level 3 decision)
         user = decision.to_llm_prompt()
@@ -305,6 +327,7 @@ class VotingHandler:
         participant: Participant,
         voter_seat: int,
         living_players: set[int],
+        events_so_far: list[GameEvent] | None = None,
     ) -> Optional[int]:
         """Get valid vote from participant with retry.
 
@@ -313,12 +336,18 @@ class VotingHandler:
             participant: The participant to query
             voter_seat: The voter's seat number
             living_players: Set of valid vote targets
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             The seat number voted for, or None (abstention)
         """
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, voter_seat, living_players)
+            system, user = self._build_prompts(
+                context,
+                voter_seat,
+                living_players,
+                events_so_far,
+            )
 
             # Build choices for TUI rendering
             choices = self._build_choices(living_players)

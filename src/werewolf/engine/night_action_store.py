@@ -1,6 +1,6 @@
 """Night action storage for tracking persistent state across nights."""
 
-from typing import Optional
+from typing import Optional, Set
 from pydantic import BaseModel
 
 
@@ -13,6 +13,8 @@ class NightActionSnapshot(BaseModel):
     antidote_used: bool = False
     poison_used: bool = False
     guard_prev_target: Optional[int] = None
+    # Seer checks are persistent - we track who has been checked
+    seer_checks: set[int] = set()
 
 
 class NightActionStore(BaseModel):
@@ -22,6 +24,7 @@ class NightActionStore(BaseModel):
     - antidote_used: Whether witch's antidote has been used
     - poison_used: Whether witch's poison has been used
     - guard_prev_target: The player guarded previous night (for restriction)
+    - seer_checks: Set of seats already checked by the seer
 
     Ephemeral state (cleared each night):
     - kill_target: Werewolves' chosen kill target
@@ -33,6 +36,8 @@ class NightActionStore(BaseModel):
     antidote_used: bool = False
     poison_used: bool = False
     guard_prev_target: Optional[int] = None
+    # Seer checks are persistent - track all players the seer has checked
+    seer_checks: set[int] = set()
 
     # Ephemeral (cleared each night)
     kill_target: Optional[int] = None
@@ -45,12 +50,13 @@ class NightActionStore(BaseModel):
 
         Returns:
             NightActionSnapshot containing antidote_used, poison_used,
-            and guard_prev_target.
+            guard_prev_target, and seer_checks.
         """
         return NightActionSnapshot(
             antidote_used=self.antidote_used,
             poison_used=self.poison_used,
             guard_prev_target=self.guard_prev_target,
+            seer_checks=self.seer_checks.copy(),
         )
 
     @classmethod
@@ -68,6 +74,7 @@ class NightActionStore(BaseModel):
             antidote_used=snapshot.antidote_used,
             poison_used=snapshot.poison_used,
             guard_prev_target=snapshot.guard_prev_target,
+            seer_checks=snapshot.seer_checks.copy(),
         )
 
     def reset_for_new_night(self) -> None:

@@ -18,7 +18,9 @@ from werewolf.events.game_events import (
     DeathCause,
     Phase,
     SubPhase,
+    GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.models.player import Player, Role
 from werewolf.ui.choices import ChoiceSpec, make_seat_choice
 from werewolf.prompt_levels import (
@@ -126,6 +128,7 @@ class BanishmentResolutionHandler:
         context: "PhaseContext",
         banishment_input: "BanishmentInput",
         participant: Optional[Participant] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> HandlerResult:
         """Execute the BanishmentResolution subphase for banished players.
 
@@ -133,10 +136,12 @@ class BanishmentResolutionHandler:
             context: Game state with players, living/dead, sheriff
             banishment_input: Input with banished player seat (None if tie)
             participant: Participant for querying AI/human decisions (the banished player)
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             HandlerResult with SubPhaseLog containing DeathEvent (or empty if no banishment)
         """
+        events_so_far = events_so_far or []
         banished = banishment_input.banished
         day = banishment_input.day
 
@@ -156,6 +161,7 @@ class BanishmentResolutionHandler:
             banished=banished,
             day=day,
             participant=participant,
+            events_so_far=events_so_far,
         )
 
         debug_info = self._build_debug_info(death_event, banished)
@@ -174,6 +180,7 @@ class BanishmentResolutionHandler:
         banished: int,
         day: int,
         participant: Optional[Participant] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> DeathEvent:
         """Create a DeathEvent for the banished player.
 
@@ -182,10 +189,12 @@ class BanishmentResolutionHandler:
             banished: Seat of banished player
             day: Current day number
             participant: Participant for querying AI/human decisions
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             DeathEvent with all associated actions resolved
         """
+        events_so_far = events_so_far or []
         player = context.get_player(banished)
 
         # Last words: always required for banishment (unlike night deaths)
@@ -194,6 +203,7 @@ class BanishmentResolutionHandler:
             seat=banished,
             day=day,
             participant=participant,
+            events_so_far=events_so_far,
         )
 
         # Hunter shoot: Hunter CAN shoot on banishment (unlike POISON death)
@@ -202,6 +212,7 @@ class BanishmentResolutionHandler:
             seat=banished,
             day=day,
             participant=participant,
+            events_so_far=events_so_far,
         )
 
         # Badge transfer: only if Sheriff
@@ -210,6 +221,7 @@ class BanishmentResolutionHandler:
             seat=banished,
             day=day,
             participant=participant,
+            events_so_far=events_so_far,
         )
 
         return DeathEvent(
@@ -229,6 +241,7 @@ class BanishmentResolutionHandler:
         seat: int,
         day: int,
         participant: Optional[Participant] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> str:
         """Get last words from banished player.
 
@@ -239,17 +252,19 @@ class BanishmentResolutionHandler:
             seat: Banished player seat
             day: Current day number
             participant: Participant for AI query
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Last words string (always non-empty for banishment)
         """
+        events_so_far = events_so_far or []
         player = context.get_player(seat)
         if player is None:
             return "..."
 
         # If participant available, query them
         if participant is not None:
-            system, user = self._build_last_words_prompts(context, seat, day)
+            system, user = self._build_last_words_prompts(context, seat, day, events_so_far)
             try:
                 response = await participant.decide(system, user)
                 if response and len(response.strip()) >= 10:
@@ -265,6 +280,7 @@ class BanishmentResolutionHandler:
         context: "PhaseContext",
         seat: int,
         day: int,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> tuple[str, str]:
         """Build system and user prompts for last words.
 
@@ -272,10 +288,17 @@ class BanishmentResolutionHandler:
             context: Game state
             seat: Banished player seat
             day: Current day number
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             (system_prompt, user_prompt)
         """
+        # Get public events
+        public_events = get_public_events(events_so_far or [], day, seat)
+        public_events_text = format_public_events(
+            public_events, context.living_players, context.dead_players, seat,
+        )
+
         # Level 1: Static system prompt
         system = get_banishment_last_words_system()
 
@@ -286,8 +309,11 @@ class BanishmentResolutionHandler:
             day=day,
         )
 
-        # Level 3: Decision prompt
-        decision = build_banishment_last_words_decision(state_context)
+        # Level 3: Decision prompt with public events
+        decision = build_banishment_last_words_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt
         user = decision.to_llm_prompt()
@@ -358,6 +384,7 @@ class BanishmentResolutionHandler:
         seat: int,
         day: int,
         participant: Optional[Participant] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> Optional[int]:
         """Get hunter shoot target if applicable.
 
@@ -368,10 +395,12 @@ class BanishmentResolutionHandler:
             seat: Dead player seat (potential Hunter)
             day: Current day number
             participant: Participant for AI query
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Hunter shoot target (None = skipped or not applicable)
         """
+        events_so_far = events_so_far or []
         player = context.get_player(seat)
         if player is None:
             return None
@@ -382,7 +411,7 @@ class BanishmentResolutionHandler:
 
         # If participant available, query them
         if participant is not None:
-            return await self._query_hunter_shoot(context, seat, day, participant)
+            return await self._query_hunter_shoot(context, seat, day, participant, events_so_far)
 
         # Generate AI decision for hunter shoot target
         return self._choose_hunter_shoot_target(context, seat)
@@ -393,8 +422,17 @@ class BanishmentResolutionHandler:
         hunter_seat: int,
         day: int,
         participant: Participant,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> Optional[int]:
         """Query hunter for shoot target with retries."""
+        events_so_far = events_so_far or []
+
+        # Get public events
+        public_events = get_public_events(events_so_far, day, hunter_seat)
+        public_events_text = format_public_events(
+            public_events, context.living_players, context.dead_players, hunter_seat,
+        )
+
         # Level 1: Static system prompt
         system = get_banishment_hunter_shoot_system()
 
@@ -405,8 +443,11 @@ class BanishmentResolutionHandler:
             day=day,
         )
 
-        # Level 3: Decision prompt
-        decision = build_banishment_hunter_shoot_decision(state_context)
+        # Level 3: Decision prompt with public events
+        decision = build_banishment_hunter_shoot_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt
         user = decision.to_llm_prompt()
@@ -527,6 +568,7 @@ class BanishmentResolutionHandler:
         seat: int,
         day: int,
         participant: Optional[Participant] = None,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> Optional[int]:
         """Get badge transfer target if banished player is Sheriff.
 
@@ -535,10 +577,12 @@ class BanishmentResolutionHandler:
             seat: Banished player seat (potential Sheriff)
             day: Current day number
             participant: Participant for AI query
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Badge transfer target or None
         """
+        events_so_far = events_so_far or []
         player = context.get_player(seat)
         if player is None:
             return None
@@ -548,7 +592,7 @@ class BanishmentResolutionHandler:
 
         # If participant available, query them
         if participant is not None:
-            return await self._query_badge_transfer(context, seat, day, participant)
+            return await self._query_badge_transfer(context, seat, day, participant, events_so_far)
 
         # Generate AI decision for badge transfer
         return self._choose_badge_heir(context, seat)
@@ -559,8 +603,17 @@ class BanishmentResolutionHandler:
         sheriff_seat: int,
         day: int,
         participant: Participant,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> Optional[int]:
         """Query sheriff for badge transfer with retries."""
+        events_so_far = events_so_far or []
+
+        # Get public events
+        public_events = get_public_events(events_so_far, day, sheriff_seat)
+        public_events_text = format_public_events(
+            public_events, context.living_players, context.dead_players, sheriff_seat,
+        )
+
         # Level 1: Static system prompt
         system = get_banishment_badge_transfer_system()
 
@@ -571,8 +624,11 @@ class BanishmentResolutionHandler:
             day=day,
         )
 
-        # Level 3: Decision prompt
-        decision = build_banishment_badge_transfer_decision(state_context)
+        # Level 3: Decision prompt with public events
+        decision = build_banishment_badge_transfer_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt
         user = decision.to_llm_prompt()

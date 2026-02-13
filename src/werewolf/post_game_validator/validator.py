@@ -21,7 +21,7 @@ class PostGameValidator:
     This validator replays the game from the event log and validates all rules
     independently of the in-game validator. It checks:
     - Game initialization (B.1-B.4)
-    - Night actions (D.1-D.5, E.1-E.7, F.1-F.3, F.5, G.1-G.4)
+    - Night actions (D.1-D.4, E.1-E.7, F.1-F.3, F.5, G.1-G.4)
     - Day actions (H.1-H.5, I.1-I.9, J.1-J.5, K.1-K.4, L.1-L.4)
     - Victory conditions (A.1-A.5)
     - State consistency (M.1-M.7)
@@ -227,7 +227,7 @@ class PostGameValidator:
     # =========================================================================
 
     def _validate_werewolf_action(self, event: WerewolfKill) -> None:
-        """Validate werewolf action (D.1-D.5)."""
+        """Validate werewolf action (D.1-D.4)."""
         # D.1: Actor must be werewolf and alive
         if event.actor not in self.state.players:
             self._add_violation(
@@ -250,18 +250,10 @@ class PostGameValidator:
                     "WerewolfKill"
                 )
 
-        # D.3: Cannot target self
-        if event.actor == event.target:
-            self._add_violation(
-                "D.3", "Night Actions - Werewolf",
-                f"Werewolf cannot target themselves (actor={event.actor})",
-                "WerewolfKill"
-            )
-
-        # D.4: Cannot target dead players
+        # D.3: Cannot target dead players
         if event.target is not None and event.target in self.state.dead_players:
             self._add_violation(
-                "D.4", "Night Actions - Werewolf",
+                "D.3", "Night Actions - Werewolf",
                 f"Werewolf cannot target dead player {event.target}",
                 "WerewolfKill"
             )

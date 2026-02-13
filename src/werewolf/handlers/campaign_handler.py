@@ -13,7 +13,14 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.models.player import Player, Role
+from werewolf.prompt_levels import (
+    get_campaign_opt_out_system,
+    make_campaign_context,
+    build_campaign_opt_out_decision,
+    Choice,
+)
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType
 
 
@@ -119,6 +126,7 @@ class CampaignHandler:
         context: "PhaseContext",
         participants: Sequence[tuple[int, Participant]],
         sheriff_candidates: list[int],
+        events_so_far: list[GameEvent] | None = None,
     ) -> HandlerResult:
         """Execute the Campaign subphase.
 
@@ -126,11 +134,13 @@ class CampaignHandler:
             context: Game state with players, living/dead, sheriff, day
             participants: Sequence of (seat, Participant) tuples for all players
             sheriff_candidates: List of candidate seats running for Sheriff
+            events_so_far: Previous events in the current day (for context)
 
         Returns:
             HandlerResult with SubPhaseLog containing Speech events
         """
         events = []
+        events_so_far = events_so_far or []
 
         # Validate day == 1
         if context.day != 1:
@@ -171,6 +181,7 @@ class CampaignHandler:
                     participant=participant,
                     for_seat=seat,
                     candidates=ordered_candidates,
+                    events_so_far=events_so_far,
                 )
                 # Skip None responses (opt-out)
                 if speech is not None:
@@ -218,6 +229,7 @@ class CampaignHandler:
         context: "PhaseContext",
         for_seat: int,
         candidates: list[int],
+        events_so_far: list[GameEvent] | None = None,
     ) -> tuple[str, str]:
         """Build filtered prompts for campaign speech.
 
@@ -225,10 +237,26 @@ class CampaignHandler:
             context: Game state
             for_seat: The candidate seat to build prompts for
             candidates: List of all candidate seats (ordered)
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        # Get public events using the visibility filter
+        public_events = get_public_events(
+            events_so_far or [],
+            context.day,
+            for_seat,
+        )
+
+        # Format public events for the prompt
+        public_events_text = format_public_events(
+            public_events,
+            context.living_players,
+            context.dead_players,
+            for_seat,
+        )
+
         player = context.get_player(for_seat)
         role_name = player.role.value if player else "Unknown"
 
@@ -270,6 +298,8 @@ Make it compelling and appropriate for a social deduction game."""
         # Build user prompt
         user = f"""=== Day {context.day} - Sheriff Campaign ===
 
+{public_events_text}
+
 YOUR INFORMATION:
   Your seat: {for_seat}
   Your role: {role_name}
@@ -291,23 +321,14 @@ CAMPAIGN RESPONSE:
 
         return system, user
 
-    def _build_stay_optout_choices(self) -> ChoiceSpec:
-        """Build ChoiceSpec for stay/opt-out decision (Stage 1 of 2).
-
-        Returns:
-            ChoiceSpec with "stay" and "opt-out" options for TUI rendering
-        """
-        return ChoiceSpec(
-            choice_type=ChoiceType.SINGLE,
-            prompt='Do you want to stay in the race or withdraw? Enter "stay" or "opt-out".',
-            options=[
-                ChoiceOption(value="stay", display="Stay in Race"),
-                ChoiceOption(value="opt-out", display="Withdraw from Race"),
-            ],
-            allow_none=False,
-        )
-
-    def _build_speech_prompt(self, is_opt_out: bool, context: "PhaseContext", for_seat: int, candidates: list[int]) -> tuple[str, str]:
+    def _build_speech_prompt(
+        self,
+        is_opt_out: bool,
+        context: "PhaseContext",
+        for_seat: int,
+        candidates: list[int],
+        events_so_far: list[GameEvent] | None = None,
+    ) -> tuple[str, str]:
         """Build prompts for speech or explanation (Stage 2 of 2).
 
         Args:
@@ -315,10 +336,26 @@ CAMPAIGN RESPONSE:
             context: Game state
             for_seat: The candidate seat
             candidates: List of all candidate seats
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        # Get public events using the visibility filter
+        public_events = get_public_events(
+            events_so_far or [],
+            context.day,
+            for_seat,
+        )
+
+        # Format public events for the prompt
+        public_events_text = format_public_events(
+            public_events,
+            context.living_players,
+            context.dead_players,
+            for_seat,
+        )
+
         player = context.get_player(for_seat)
         role_name = player.role.value if player else "Unknown"
 
@@ -335,6 +372,8 @@ Be honest or strategic about why you're stepping down.
 Your response should be your explanation as a single string."""
 
             user = f"""=== Day {context.day} - Sheriff Campaign Withdrawal ===
+
+{public_events_text}
 
 YOUR INFORMATION:
   Your seat: {for_seat}
@@ -365,6 +404,8 @@ Make it compelling and appropriate for a social deduction game."""
 
             user = f"""=== Day {context.day} - Sheriff Campaign Speech ===
 
+{public_events_text}
+
 YOUR INFORMATION:
   Your seat: {for_seat}
   Your role: {role_name}
@@ -386,6 +427,7 @@ CAMPAIGN SPEECH:
         participant: Participant,
         for_seat: int,
         candidates: list[int],
+        events_so_far: list[GameEvent] | None = None,
     ) -> Optional[Speech]:
         """Get valid campaign decision from participant with two-stage queries.
 
@@ -401,6 +443,7 @@ CAMPAIGN SPEECH:
             participant: The participant to query
             for_seat: The candidate's seat
             candidates: List of all candidates (ordered)
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             Speech event, or None if participant opts out
@@ -408,16 +451,35 @@ CAMPAIGN SPEECH:
         Raises:
             MaxRetriesExceededError: If max retries are exceeded without valid input
         """
-        # Stage 1: Get stay/opt-out decision with ChoiceSpec
-        choices = self._build_stay_optout_choices()
+        events_so_far = events_so_far or []
+
+        # Build prompts using three-level prompt system
+        public_events = get_public_events(events_so_far, context.day, for_seat)
+        public_events_text = format_public_events(
+            public_events, context.living_players, context.dead_players, for_seat,
+        )
+        campaign_context = make_campaign_context(context, for_seat, candidates)
+        decision = build_campaign_opt_out_decision(campaign_context, public_events_text)
+
+        # Convert DecisionPrompt choices to ChoiceSpec
+        choice_options = [
+            ChoiceOption(value=c.value, display=c.display, description=c.description)
+            for c in (decision.choices or [])
+        ]
+        choice_spec = ChoiceSpec(
+            choice_type=ChoiceType.SINGLE,
+            prompt=decision.question,
+            options=choice_options,
+            allow_none=False,
+        )
 
         for attempt in range(self.max_retries):
-            # Query for stay/opt-out selection
+            # Query for stay/opt-out selection using proper prompts
             selection = await participant.decide(
-                system_prompt="You are deciding whether to stay in or withdraw from the Sheriff race.",
-                user_prompt='Do you want to stay in the race or withdraw? Enter "stay" or "opt-out".',
-                hint='Please enter either "stay" or "opt-out".',
-                choices=choices,
+                system_prompt=get_campaign_opt_out_system(),
+                user_prompt=decision.to_llm_prompt(),
+                hint=decision.hint or 'Please enter either "stay" or "opt-out".',
+                choices=choice_spec,
             )
 
             # Parse selection (be flexible with "opt-out" vs "opt out")
@@ -430,6 +492,7 @@ CAMPAIGN SPEECH:
                     context=context,
                     for_seat=for_seat,
                     candidates=candidates,
+                    events_so_far=events_so_far,
                 )
 
                 for speech_attempt in range(self.max_retries):
@@ -463,6 +526,7 @@ CAMPAIGN SPEECH:
                     context=context,
                     for_seat=for_seat,
                     candidates=candidates,
+                    events_so_far=events_so_far,
                 )
 
                 # Still need to get explanation, but don't create Speech event

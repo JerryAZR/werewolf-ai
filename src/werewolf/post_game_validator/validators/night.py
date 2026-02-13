@@ -4,9 +4,8 @@ Rules:
 Night Actions - Werewolf (D):
 - D.1: Only werewolves can perform werewolf actions
 - D.2: Werewolves must have a valid target or choose to skip
-- D.3: Werewolves cannot target themselves
-- D.4: Werewolves cannot target dead players
-- D.5: Single collective werewolf decision per night
+- D.3: Werewolves cannot target dead players
+- D.4: Single collective werewolf decision per night
 
 Night Actions - Witch (E):
 - E.1: Only the Witch can perform witch actions
@@ -120,7 +119,7 @@ def _validate_werewolf_action(
     night_actions: dict,
     current_day: int,
 ) -> list["ValidationViolation"]:
-    """Validate werewolf kill action (D.1-D.5)."""
+    """Validate werewolf kill action (D.1-D.4)."""
     violations: list["ValidationViolation"] = []
 
     # D.1: Actor must be werewolf
@@ -143,20 +142,10 @@ def _validate_werewolf_action(
                 "event_type": "WerewolfKill",
             })
 
-    # D.3: Cannot target self
-    if event.actor == event.target:
-        violations.append({
-            "rule_id": "D.3",
-            "category": "Night Actions - Werewolf",
-            "message": f"Werewolf cannot target themselves (actor={event.actor})",
-            "severity": "error",
-            "event_type": "WerewolfKill",
-        })
-
-    # D.4: Cannot target dead players
+    # D.3: Cannot target dead players
     if event.target is not None and state and event.target not in state.living_players:
         violations.append({
-            "rule_id": "D.4",
+            "rule_id": "D.3",
             "category": "Night Actions - Werewolf",
             "message": f"Werewolf cannot target dead player {event.target}",
             "severity": "error",
@@ -166,9 +155,9 @@ def _validate_werewolf_action(
     # Track werewolf decision (single collective decision per night)
     night_key = f"night_{current_day}"
     if "werewolf_target" in night_actions:
-        # Multiple werewolf decisions - this is D.5 violation
+        # Multiple werewolf decisions - this is D.4 violation
         violations.append({
-            "rule_id": "D.5",
+            "rule_id": "D.4",
             "category": "Night Actions - Werewolf",
             "message": "Multiple werewolf kill decisions recorded in single night",
             "severity": "error",

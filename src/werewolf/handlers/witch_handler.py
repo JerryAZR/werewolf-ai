@@ -14,6 +14,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.models.player import Player, Role
 from werewolf.prompt_levels import (
     get_witch_system,
@@ -133,6 +134,7 @@ class WitchHandler:
         context: "PhaseContext",
         participants: Sequence[tuple[int, Participant]],
         night_actions: NightActions,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> HandlerResult:
         """Execute the WitchAction subphase.
 
@@ -141,11 +143,13 @@ class WitchHandler:
             participants: Sequence of (seat, Participant) tuples
                          Should contain at most one entry (the witch)
             night_actions: Night action data including kill_target, antidote_used, poison_used
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             HandlerResult with SubPhaseLog containing WitchAction event
         """
         events = []
+        events_so_far = events_so_far or []
 
         # Find living witch seat
         witch_seat = None
@@ -193,6 +197,7 @@ class WitchHandler:
             participant=participant,
             witch_seat=witch_seat,
             night_actions=night_actions,
+            events_so_far=events_so_far,
         )
 
         events.append(action)
@@ -209,6 +214,7 @@ class WitchHandler:
         context: "PhaseContext",
         for_seat: int,
         night_actions: NightActions,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> tuple[str, str]:
         """Build filtered prompts for the witch.
 
@@ -216,13 +222,21 @@ class WitchHandler:
             context: Game state
             for_seat: The witch seat to build prompts for
             night_actions: Night action data
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        events_so_far = events_so_far or []
         antidote_available = not night_actions.antidote_used
         poison_available = not night_actions.poison_used
         kill_target = night_actions.kill_target
+
+        # Get public events
+        public_events = get_public_events(events_so_far, context.day, for_seat)
+        public_events_text = format_public_events(
+            public_events, context.living_players, context.dead_players, for_seat,
+        )
 
         # Get static system prompt (Level 1)
         system = get_witch_system()
@@ -236,8 +250,11 @@ class WitchHandler:
             werewolf_kill_target=kill_target,
         )
 
-        # Build decision prompt (Level 3)
-        decision = build_witch_decision(state_context)
+        # Build decision prompt (Level 3) with public events
+        decision = build_witch_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Use LLM format for user prompt
         user = decision.to_llm_prompt()
@@ -302,6 +319,7 @@ class WitchHandler:
         participant: Participant,
         witch_seat: int,
         night_actions: NightActions,
+        events_so_far: Optional[list[GameEvent]] = None,
     ) -> WitchAction:
         """Get valid action from witch participant with retry.
 
@@ -310,6 +328,7 @@ class WitchHandler:
             participant: The participant to query
             witch_seat: The witch's seat
             night_actions: Night action data
+            events_so_far: Previous game events for public visibility filtering
 
         Returns:
             Valid WitchAction event
@@ -317,8 +336,9 @@ class WitchHandler:
         Raises:
             MaxRetriesExceededError: If max retries are exceeded
         """
+        events_so_far = events_so_far or []
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, witch_seat, night_actions)
+            system, user = self._build_prompts(context, witch_seat, night_actions, events_so_far)
 
             # Build choices for TUI rendering
             choices = self.build_choice_spec(context, witch_seat, night_actions)

@@ -168,15 +168,11 @@ class DebugStubPlayer:
             print(f"PHASE: {phase_info}")
 
         print(f"\n--- SYSTEM PROMPT ({len(system_prompt)} chars) ---")
-        print(system_prompt[:500] + "..." if len(system_prompt) > 500 else system_prompt)
+        print(system_prompt)
 
         print(f"\n--- USER PROMPT ({len(user_prompt)} chars) ---")
-        # Show just the last part with the actual decision question
-        lines = user_prompt.split('\n')
-        for line in lines[-10:]:
-            print(line)
-        if len(lines) > 10:
-            print(f"  ... ({len(lines) - 10} more lines)")
+        # Show the full user prompt for debugging
+        print(user_prompt)
 
         if hint:
             print(f"\n--- HINT ---")
@@ -185,7 +181,11 @@ class DebugStubPlayer:
         # Format and display choices
         choice_info = self._format_choices(choices)
         if choice_info:
-            print(f"\n--- CHOICES ({len(choice_info['options'])} options) ---")
+            # Calculate total options including skip/none
+            total_opts = len(choice_info['options'])
+            if choice_info.get('allow_none'):
+                total_opts += 1
+            print(f"\n--- CHOICES ({total_opts} options) ---")
             for i, opt in enumerate(choice_info['options'], 1):
                 print(f"  {i}. [{opt['value']}] {opt['display']}")
             if choice_info.get('allow_none'):

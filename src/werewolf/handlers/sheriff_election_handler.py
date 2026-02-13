@@ -14,6 +14,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType, make_seat_choice
 from werewolf.prompt_levels import (
     get_sheriff_election_system,
@@ -117,6 +118,7 @@ class SheriffElectionHandler:
         context: "PhaseContext",
         participants: Sequence[tuple[int, Participant]],
         sheriff_candidates: list[int],
+        events_so_far: list[GameEvent] | None = None,
     ) -> HandlerResult:
         """Execute the SheriffElection subphase.
 
@@ -124,11 +126,13 @@ class SheriffElectionHandler:
             context: Game state with day, sheriff_candidates, living_players
             participants: Sequence of (seat, Participant) tuples for all players
             sheriff_candidates: Remaining candidates after OptOut
+            events_so_far: Previous events in the current day (for context)
 
         Returns:
             HandlerResult with SheriffOutcome event
         """
         events = []
+        events_so_far = events_so_far or []
 
         # Validate day == 1
         if context.day != 1:
@@ -182,6 +186,7 @@ class SheriffElectionHandler:
                     participant=participant,
                     voter_seat=seat,
                     candidates=sheriff_candidates,
+                    events_so_far=events_so_far,
                 )
 
                 # Calculate vote weight (default 1.0, Sheriff 1.5)
@@ -254,6 +259,7 @@ class SheriffElectionHandler:
         context: "PhaseContext",
         voter_seat: int,
         candidates: list[int],
+        events_so_far: list[GameEvent] | None = None,
     ) -> tuple[str, str]:
         """Build filtered prompts for voter.
 
@@ -261,10 +267,26 @@ class SheriffElectionHandler:
             context: Game state
             voter_seat: The voter seat number
             candidates: List of remaining candidate seats
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        # Get public events using the visibility filter
+        public_events = get_public_events(
+            events_so_far or [],
+            context.day,
+            voter_seat,
+        )
+
+        # Format public events for the prompt
+        public_events_text = format_public_events(
+            public_events,
+            context.living_players,
+            context.dead_players,
+            voter_seat,
+        )
+
         # Level 1: Static system prompt (role rules only)
         system = get_sheriff_election_system()
 
@@ -276,7 +298,11 @@ class SheriffElectionHandler:
         )
 
         # Level 3: Decision prompt
-        decision = build_sheriff_election_decision(state_context, candidates=candidates)
+        decision = build_sheriff_election_decision(
+            state_context,
+            candidates=candidates,
+            public_events_text=public_events_text,
+        )
 
         # Build user prompt (combine Level 2 context + Level 3 decision)
         user = decision.to_llm_prompt()
@@ -308,6 +334,7 @@ class SheriffElectionHandler:
         participant: Participant,
         voter_seat: int,
         candidates: list[int],
+        events_so_far: list[GameEvent] | None = None,
     ) -> Optional[int]:
         """Get valid vote from participant with retry.
 
@@ -316,12 +343,15 @@ class SheriffElectionHandler:
             participant: The participant to query
             voter_seat: The voter's seat number
             candidates: List of valid candidate seats
+            events_so_far: All game events for public visibility filtering
 
         Returns:
             The seat number voted for, or None if invalid
         """
+        events_so_far = events_so_far or []
+
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, voter_seat, candidates)
+            system, user = self._build_prompts(context, voter_seat, candidates, events_so_far)
 
             # Build choices for TUI rendering
             choices = self._build_choices(candidates)

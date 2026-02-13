@@ -15,6 +15,7 @@ from werewolf.events.game_events import (
     SubPhase,
     GameEvent,
 )
+from werewolf.events.event_visibility import get_public_events, format_public_events
 from werewolf.models.player import Player, Role
 from werewolf.prompt_levels import (
     get_werewolf_system,
@@ -126,6 +127,7 @@ class WerewolfHandler:
         self,
         context: "PhaseContext",
         participants: Sequence[tuple[int, Participant]],
+        events_so_far: list[GameEvent] | None = None,
     ) -> HandlerResult:
         """Execute the WerewolfAction subphase.
 
@@ -133,11 +135,13 @@ class WerewolfHandler:
             context: Game state with players, living/dead, sheriff
             participants: Sequence of (seat, Participant) tuples for werewolves
                           Can also be a dict[int, Participant] for test compatibility
+            events_so_far: Previous events in the current night (for context)
 
         Returns:
             HandlerResult with SubPhaseLog containing WerewolfKill event
         """
         events = []
+        events_so_far = events_so_far or []
 
         # Get living werewolf seats
         werewolf_seats = [
@@ -174,7 +178,7 @@ class WerewolfHandler:
         # Query only the representative werewolf
         participant = participant_dict.get(representative)
         if participant:
-            target = await self._get_valid_target(context, participant, representative)
+            target = await self._get_valid_target(context, participant, representative, events_so_far)
 
             # Create debug info with collective decision info
             import json
@@ -204,16 +208,33 @@ class WerewolfHandler:
         self,
         context: "PhaseContext",
         for_seat: int,
+        events_so_far: list[GameEvent] | None = None,
     ) -> tuple[str, str]:
         """Build filtered prompts for werewolf.
 
         Args:
             context: Game state
             for_seat: The werewolf seat to build prompts for
+            events_so_far: Previous events in the current night
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        # Get public events using the visibility filter
+        public_events = get_public_events(
+            events_so_far or [],
+            context.day,
+            for_seat,
+        )
+
+        # Format public events for the prompt
+        public_events_text = format_public_events(
+            public_events,
+            context.living_players,
+            context.dead_players,
+            for_seat,
+        )
+
         # Get static system prompt (Level 1)
         system = get_werewolf_system()
 
@@ -224,7 +245,10 @@ class WerewolfHandler:
         )
 
         # Build decision prompt (Level 3)
-        decision = build_werewolf_decision(state_context)
+        decision = build_werewolf_decision(
+            state_context,
+            public_events_text=public_events_text,
+        )
 
         # Use LLM format for user prompt (includes choices)
         user = decision.to_llm_prompt()
@@ -265,6 +289,7 @@ class WerewolfHandler:
         context: "PhaseContext",
         participant: Participant,
         for_seat: int = 0,
+        events_so_far: list[GameEvent] | None = None,
     ) -> int:
         """Get valid target from participant with retry.
 
@@ -272,6 +297,7 @@ class WerewolfHandler:
             context: Game state
             participant: The participant to query
             for_seat: The werewolf seat making the decision
+            events_so_far: Previous events in the current night
 
         Returns:
             Valid target seat number
@@ -283,7 +309,7 @@ class WerewolfHandler:
         choices = self.build_choice_spec(context, for_seat)
 
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, for_seat)
+            system, user = self._build_prompts(context, for_seat, events_so_far)
 
             # Add hint for retry attempts
             hint = None
