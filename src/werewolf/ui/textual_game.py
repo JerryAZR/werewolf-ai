@@ -337,7 +337,7 @@ class WerewolfUI(App):
     async def _run_game(self) -> None:
         """Run the game."""
         try:
-            from werewolf.models import Player, create_players_from_config
+            from werewolf.models import Player, PlayerType, create_players_from_config
             from werewolf.engine import WerewolfGame
             from werewolf.ai.stub_ai import create_stub_player
 
@@ -351,6 +351,7 @@ class WerewolfUI(App):
                     seat=seat,
                     name=f"Player {seat}",
                     role=role,
+                    player_type=PlayerType.HUMAN if seat == self.seat else PlayerType.AI,
                 )
 
             # Show role in the log
