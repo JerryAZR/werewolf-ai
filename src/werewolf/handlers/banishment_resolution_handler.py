@@ -20,135 +20,18 @@ from werewolf.events.game_events import (
     SubPhase,
 )
 from werewolf.models.player import Player, Role
-from werewolf.ui.choices import make_seat_choice
-
-
-# ============================================================================
-# AI Prompts (Single Source of Truth)
-# ============================================================================
-# These constants define all prompts used by this handler.
-# See PROMPTS.md for human-readable documentation of these prompts.
-
-
-PROMPT_LAST_WORDS_SYSTEM = """You are a player at seat {seat} and you are about to be banished.
-
-YOUR ROLE: {role_name}
-
-DEATH CIRCUMSTANCES: You are being banished by the village vote.
-
-This is your chance to speak your final words to the village.
-Make them memorable and strategic - consider:
-- What information to reveal
-- Who to trust or suspect
-- What you want your allies/enemies to know
-
-Your response should be your final speech as a single string.
-Be authentic to your role and strategic for your team's victory!"""
-
-
-PROMPT_LAST_WORDS_USER = """=== Banishment - Your Final Words ===
-
-YOUR INFORMATION:
-  Your seat: {seat}
-  Your role: {role_name} (keep secret or reveal as you choose)
-  You are about to be banished!
-
-DEATH CONTEXT:
-  Banishment by village vote
-
-LIVING PLAYERS: {living_seats}
-
-DEAD PLAYERS: {dead_seats}
-
-This is your last chance to speak! You may:
-- Reveal your role or keep it hidden
-- Share information or mislead
-- Accuse others or defend yourself
-- Say farewell
-
-Enter your final speech below:
-(Must be non-empty - this is your last chance to speak!)"""
-
-
-PROMPT_HUNTER_SHOOT_SYSTEM = """You are the Hunter at seat {hunter_seat} and you are being banished!
-
-YOUR ROLE:
-- As the Hunter, you get ONE final shot before dying
-- You can shoot any ONE living player (werewolf, villager, anyone)
-- You may also choose to SKIP (not shoot anyone)
-- Your shot is your last action in the game
-
-IMPORTANT RULES:
-1. You can shoot any living player
-2. Werewolves appear as WEREWOLF, everyone else appears as GOOD
-3. This is your final action - choose wisely!
-
-Your response should be: TARGET_SEAT or "SKIP"
-- Example: "7" (shoot player at seat 7)
-- Example: "SKIP" (don't shoot anyone)"""
-
-
-PROMPT_HUNTER_SHOOT_USER = """=== Banishment - Hunter Final Shot ===
-
-YOUR IDENTITY:
-  You are the Hunter at seat {hunter_seat}
-  You are being banished!
-  This is your LAST ACTION - choose wisely!
-
-LIVING PLAYERS (potential targets):
-  Seats: {living_seats}
-
-RULES:
-  - You can shoot any ONE living player
-  - Werewolves appear as WEREWOLF
-  - All other roles (Villager, Guard, Witch, Seer) appear as GOOD
-  - You may also SKIP (not shoot anyone)
-
-HINT: {werewolf_hint}
-
-Enter your choice (e.g., "7" or "SKIP"):"""
-
-
-PROMPT_BADGE_TRANSFER_SYSTEM = """You are the Sheriff at seat {sheriff_seat} and you are about to be banished.
-
-SHERIFF POWERS:
-- The Sheriff has 1.5x vote weight
-- The Sheriff speaks LAST during all discussions
-- When you die, you can transfer your badge to ONE living player
-
-IMPORTANT RULES:
-1. You can transfer to any living player
-2. Werewolves will try to masquerade as good - choose wisely!
-3. If you SKIP, no one gets the badge
-
-Your response should be: TARGET_SEAT or "SKIP"
-- Example: "7" (transfer badge to player at seat 7)
-- Example: "SKIP" (don't transfer the badge)"""
-
-
-PROMPT_BADGE_TRANSFER_USER = """=== Banishment - Sheriff Badge Transfer ===
-
-YOUR IDENTITY:
-  You are the Sheriff at seat {sheriff_seat}
-  You are about to be banished and must decide who inherits your badge!
-
-SHERIFF POWERS:
-  - Badge holder has 1.5x vote weight
-  - Badge holder speaks LAST during discussions
-  - This is your LAST DECISION - choose wisely!
-
-LIVING PLAYERS (potential heirs):
-  Seats: {living_seats}
-
-RULES:
-  - Choose ONE living player to receive your badge
-  - You may SKIP (no one gets the badge)
-  - Werewolves appear as WEREWOLF
-  - All other roles appear as GOOD
-
-HINT: {trusted_hint}
-
-Enter your choice (e.g., "7" or "SKIP"):"""
+from werewolf.ui.choices import ChoiceSpec, make_seat_choice
+from werewolf.prompt_levels import (
+    get_banishment_last_words_system,
+    get_banishment_hunter_shoot_system,
+    get_banishment_badge_transfer_system,
+    make_banishment_last_words_context,
+    make_banishment_hunter_shoot_context,
+    make_banishment_badge_transfer_context,
+    build_banishment_last_words_decision,
+    build_banishment_hunter_shoot_decision,
+    build_banishment_badge_transfer_decision,
+)
 
 
 # ============================================================================
@@ -393,22 +276,21 @@ class BanishmentResolutionHandler:
         Returns:
             (system_prompt, user_prompt)
         """
-        player = context.get_player(seat)
-        role_name = player.role.name.replace("_", " ").title() if player else "Unknown"
+        # Level 1: Static system prompt
+        system = get_banishment_last_words_system()
 
-        living_seats = sorted(context.living_players - {seat})
-        dead_seats = sorted(context.dead_players)
+        # Level 2: Game state context
+        state_context = make_banishment_last_words_context(
+            context=context,
+            your_seat=seat,
+            day=day,
+        )
 
-        system = PROMPT_LAST_WORDS_SYSTEM.format(
-            seat=seat,
-            role_name=role_name,
-        )
-        user = PROMPT_LAST_WORDS_USER.format(
-            seat=seat,
-            role_name=role_name,
-            living_seats=", ".join(map(str, living_seats)) if living_seats else "None",
-            dead_seats=", ".join(map(str, dead_seats)) if dead_seats else "None",
-        )
+        # Level 3: Decision prompt
+        decision = build_banishment_last_words_decision(state_context)
+
+        # Build user prompt
+        user = decision.to_llm_prompt()
 
         return system, user
 
@@ -513,25 +395,24 @@ class BanishmentResolutionHandler:
         participant: Participant,
     ) -> Optional[int]:
         """Query hunter for shoot target with retries."""
-        living_players = sorted(context.living_players - {hunter_seat})
+        # Level 1: Static system prompt
+        system = get_banishment_hunter_shoot_system()
 
-        # Identify werewolves for hint
-        werewolves = [s for s in living_players if context.is_werewolf(s)]
-        werewolf_hint = f"Known werewolves: {werewolves}" if werewolves else "No known werewolves."
-
-        system = PROMPT_HUNTER_SHOOT_SYSTEM.format(hunter_seat=hunter_seat)
-        user = PROMPT_HUNTER_SHOOT_USER.format(
+        # Level 2: Game state context
+        state_context = make_banishment_hunter_shoot_context(
+            context=context,
             hunter_seat=hunter_seat,
-            living_seats=", ".join(map(str, living_players)),
-            werewolf_hint=werewolf_hint,
+            day=day,
         )
 
-        # Build ChoiceSpec for interactive TUI and StubPlayer
-        choices = make_seat_choice(
-            prompt="Choose a player to shoot:",
-            seats=living_players,
-            allow_none=True,  # Hunter can skip
-        )
+        # Level 3: Decision prompt
+        decision = build_banishment_hunter_shoot_decision(state_context)
+
+        # Build user prompt
+        user = decision.to_llm_prompt()
+
+        # Build choices using the handler's method (returns ChoiceSpec)
+        choices = self._build_hunter_shoot_choices(context, hunter_seat)
 
         for attempt in range(self.max_retries):
             response = await participant.decide(system, user, choices=choices)
@@ -550,6 +431,24 @@ class BanishmentResolutionHandler:
                 return target
 
         raise ValueError(f"Hunter {hunter_seat} failed to provide valid shoot target after {self.max_retries} attempts")
+
+    def _build_hunter_shoot_choices(self, context: "PhaseContext", hunter_seat: int) -> ChoiceSpec:
+        """Build ChoiceSpec for hunter shoot decision.
+
+        Args:
+            context: Game state
+            hunter_seat: Hunter's seat
+
+        Returns:
+            ChoiceSpec with skip option and living player seats
+        """
+        living_players = sorted(context.living_players - {hunter_seat})
+
+        return make_seat_choice(
+            prompt="Choose a player to shoot:",
+            seats=living_players,
+            allow_none=True,  # Hunter can skip
+        )
 
     def _parse_hunter_shoot_response(
         self,
@@ -662,25 +561,24 @@ class BanishmentResolutionHandler:
         participant: Participant,
     ) -> Optional[int]:
         """Query sheriff for badge transfer with retries."""
-        living_players = sorted(context.living_players - {sheriff_seat})
+        # Level 1: Static system prompt
+        system = get_banishment_badge_transfer_system()
 
-        # Build choices for badge transfer
-        choices = make_seat_choice(
-            prompt="Choose who to pass the badge to (or Skip):",
-            seats=living_players,
-            allow_none=True,  # Sheriff can skip
-        )
-
-        # Identify trusted players for hint
-        trusted = [s for s in living_players if not context.is_werewolf(s)]
-        trusted_hint = f"Trusted players: {trusted}" if trusted else "No known trusted players."
-
-        system = PROMPT_BADGE_TRANSFER_SYSTEM.format(sheriff_seat=sheriff_seat)
-        user = PROMPT_BADGE_TRANSFER_USER.format(
+        # Level 2: Game state context
+        state_context = make_banishment_badge_transfer_context(
+            context=context,
             sheriff_seat=sheriff_seat,
-            living_seats=", ".join(map(str, living_players)),
-            trusted_hint=trusted_hint,
+            day=day,
         )
+
+        # Level 3: Decision prompt
+        decision = build_banishment_badge_transfer_decision(state_context)
+
+        # Build user prompt
+        user = decision.to_llm_prompt()
+
+        # Build choices using the handler's method (returns ChoiceSpec)
+        choices = self._build_badge_transfer_choices(context, sheriff_seat)
 
         for attempt in range(self.max_retries):
             response = await participant.decide(system, user, choices=choices)
@@ -699,6 +597,24 @@ class BanishmentResolutionHandler:
                 return target
 
         raise ValueError(f"Sheriff {sheriff_seat} failed to provide valid badge transfer target after {self.max_retries} attempts")
+
+    def _build_badge_transfer_choices(self, context: "PhaseContext", sheriff_seat: int) -> ChoiceSpec:
+        """Build ChoiceSpec for badge transfer.
+
+        Args:
+            context: Game state
+            sheriff_seat: Sheriff's seat
+
+        Returns:
+            ChoiceSpec with skip option and living player seats
+        """
+        living_players = sorted(context.living_players - {sheriff_seat})
+
+        return make_seat_choice(
+            prompt="Choose who to pass the badge to (or Skip):",
+            seats=living_players,
+            allow_none=True,
+        )
 
     def _parse_badge_transfer_response(
         self,

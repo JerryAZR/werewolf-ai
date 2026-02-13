@@ -15,6 +15,11 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType
+from werewolf.prompt_levels import (
+    get_opt_out_system,
+    make_opt_out_context,
+    build_opt_out_decision,
+)
 
 
 # ============================================================================
@@ -190,42 +195,17 @@ class OptOutHandler:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        # Filter visible information - only seats
-        other_candidates = [
-            seat for seat in context.sheriff_candidates
-            if seat != for_seat and context.is_alive(seat)
-        ]
+        # Level 1: Static system prompt (role rules only)
+        system = get_opt_out_system()
 
-        # Build system prompt
-        system = f"""You are a Sheriff candidate on Day {context.day}.
+        # Level 2: Game state context
+        state_context = make_opt_out_context(context=context, your_seat=for_seat)
 
-Your decision is FINAL - once you opt out, you cannot rejoin the Sheriff race.
-You have already given your campaign speech.
+        # Level 3: Decision prompt
+        decision = build_opt_out_decision(state_context)
 
-OTHER CANDIDATES (seat numbers only): {', '.join(map(str, other_candidates)) if other_candidates else 'none'}
-
-IMPORTANT RULES:
-1. This is your ONLY chance to opt out of the Sheriff race.
-2. If you opt out now, you cannot receive votes this election.
-3. If the Sheriff dies and passes the badge to you later, you could still become Sheriff.
-4. If you stay in, you will be eligible to receive votes.
-5. Your response must be either "opt out" or "stay".
-
-Your response should be exactly one of:
-- "opt out" - You withdraw from the Sheriff race
-- "stay" - You remain in the race"""
-
-        # Build user prompt
-        user = f"""=== Day {context.day} - Sheriff Candidate Decision ===
-
-OTHER CANDIDATES RUNNING:
-  Seats: {other_candidates if other_candidates else 'None - you are the only candidate!'}
-
-You have TWO options:
-  - "opt out" - Withdraw from the Sheriff race (CANNOT rejoin later)
-  - "stay" - Remain in the race and be eligible for votes
-
-Enter your decision:"""
+        # Build user prompt (combine Level 2 context + Level 3 decision)
+        user = decision.to_llm_prompt()
 
         return system, user
 

@@ -15,6 +15,11 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType, make_seat_choice
+from werewolf.prompt_levels import (
+    get_sheriff_election_system,
+    make_sheriff_election_context,
+    build_sheriff_election_decision,
+)
 
 
 # ============================================================================
@@ -260,53 +265,21 @@ class SheriffElectionHandler:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        # Filter visible information - only seats
-        other_living = [
-            seat for seat in context.living_players
-            if seat != voter_seat
-        ]
+        # Level 1: Static system prompt (role rules only)
+        system = get_sheriff_election_system()
 
-        # Check if voter is Sheriff (incumbent)
-        is_sheriff = voter_seat == context.sheriff
-        weight_note = "Your Sheriff vote counts as 1.5!" if is_sheriff else ""
+        # Level 2: Game state context
+        state_context = make_sheriff_election_context(
+            context=context,
+            your_seat=voter_seat,
+            candidates=candidates,
+        )
 
-        # Build candidate list string
-        candidates_str = ', '.join(map(str, candidates))
+        # Level 3: Decision prompt
+        decision = build_sheriff_election_decision(state_context, candidates=candidates)
 
-        # Build system prompt
-        system = f"""You are voting for Sheriff on Day {context.day}.
-
-SHERIFF POWERS:
-- The Sheriff has 1.5x vote weight during voting phases
-- If eliminated, the Sheriff can transfer the badge to another player
-- The Sheriff speaks LAST during all discussion phases
-
-VOTING RULES:
-- You may vote for one of the candidates or abstain
-- Your vote is secret - no one will see who you voted for
-- The candidate with the most votes wins (1.5x weight if you are Sheriff)
-- Tie = no Sheriff elected
-
-CANDIDATES (seat numbers only): {candidates_str}
-
-Your response must be exactly the seat number of your chosen candidate, or "None" to abstain.{weight_note}"""
-
-        # Build user prompt
-        user = f"""=== Day {context.day} - Sheriff Vote ===
-
-YOUR SEAT: {voter_seat}
-
-CANDIDATES RUNNING FOR SHERIFF:
-  Seats: {candidates_str}
-
-RULES:
-  - You may vote for a candidate or abstain
-  - Your vote is secret
-  - If you are the Sheriff, your vote counts as 1.5
-
-VOTE INSTRUCTIONS:
-  Enter the seat number of your chosen candidate, or "None" to abstain:
-  """
+        # Build user prompt (combine Level 2 context + Level 3 decision)
+        user = decision.to_llm_prompt()
 
         return system, user
 

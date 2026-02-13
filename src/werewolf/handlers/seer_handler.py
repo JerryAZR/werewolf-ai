@@ -16,6 +16,11 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.models.player import Player, Role
+from werewolf.prompt_levels import (
+    get_seer_system,
+    make_seer_context,
+    build_seer_decision,
+)
 
 
 def _get_choice_spec_helpers():
@@ -214,60 +219,20 @@ class SeerHandler:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        living_players_sorted = sorted(context.living_players)
+        # Get static system prompt (Level 1)
+        system = get_seer_system()
 
-        # Build system prompt
-        system = f"""You are the Seer on Night {context.day}.
+        # Build game state context (Level 2)
+        state_context = make_seer_context(
+            context=context,
+            your_seat=for_seat,
+        )
 
-YOUR ROLE:
-- You can check ONE player's identity each night
-- Your check reveals if the player is a WEREWOLF or GOOD (not their specific role)
-- You CANNOT check yourself
-- You MUST choose someone to check (no skipping)
+        # Build decision prompt (Level 3)
+        decision = build_seer_decision(state_context)
 
-IMPORTANT RULES:
-1. You only learn the result AFTER the night resolves
-2. Werewolves appear as WEREWOLF
-3. All other roles (Villager, Guard, Hunter, Witch, Seer) appear as GOOD
-4. Make strategic choices based on suspicion and game flow
-
-Your response should be in format: TARGET_SEAT
-- Example: "7" (check player at seat 7)
-- You must enter a seat number, not a name"""
-
-        # Build user prompt with visible game state
-        sheriff_info = ""
-        if context.sheriff is not None:
-            sheriff_info = f"""
-SHERIFF: Player at seat {context.sheriff}"""
-
-        living_seats_str = ', '.join(map(str, living_players_sorted))
-
-        sheriff_info = ""
-        if context.sheriff is not None:
-            sheriff_info = f"\nSheriff: Player at seat {context.sheriff} holds the sheriff badge (1.5x vote weight)."
-
-        user = f"""=== Night {context.day} - Seer Action ===
-
-YOUR IDENTITY:
-  You are the Seer at seat {for_seat}
-
-LIVING PLAYERS (seat numbers): {living_seats_str}{sheriff_info}
-
-AVAILABLE ACTIONS:
-
-1. CHECK A PLAYER
-   Description: Check if a player is a werewolf
-   Format: <seat_number>
-   Example: 7
-   Notes:
-     - You CANNOT check yourself (seat {for_seat})
-     - You MUST choose someone (no skip)
-     - Result will be either WEREWOLF or GOOD
-     - Werewolves = WEREWOLF
-     - All other roles = GOOD
-
-Enter your choice (e.g., "7"):"""
+        # Use LLM format for user prompt
+        user = decision.to_llm_prompt()
 
         return system, user
 

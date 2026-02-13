@@ -104,9 +104,38 @@ Comprehensive runtime validation with 100+ rule checks organized by category:
 
 ## AI Prompts
 
-**Authoritative source**: [PROMPTS.md](PROMPTS.md) contains all AI prompts organized by phase/subphase.
+**Authoritative sources**:
+- Legacy templates: [prompts.py](src/werewolf/prompts.py) - flat constants for backward compatibility
+- Three-level system: [prompt_levels/](src/werewolf/prompt_levels/) - modular, cache-friendly design
 
-Prompts are defined as module-level constants in each handler (e.g., `PROMPT_LAST_WORDS_SYSTEM`, `PROMPT_HUNTER_SHOOT_USER`). When editing prompts, edit the constants in the handler code.
+### Three-Level Prompt System
+
+The new modular prompt system separates concerns for cache-friendly AI interactions:
+
+**Level 1: Static System Prompts** (`prompt_levels/level1_system.py`)
+- Role rules that never change during gameplay
+- Cached per role/subphase using `@lru_cache`
+- Examples: werewolf kill rules, witch potion constraints, guard restrictions
+
+**Level 2: Game State Summary** (`prompt_levels/level2_state.py`)
+- `GameStateSummary` dataclass with current game state
+- Changes each subphase but common across roles
+- Includes: living/dead players, sheriff, recent deaths, potion status
+
+**Level 3: Decision Prompt** (`prompt_levels/level3_decision.py`)
+- Specific question for the current decision
+- For humans: `DecisionPrompt.to_tui_prompt()` for TUI display
+- For LLMs: Choices incorporated into prompt text
+
+**Usage**:
+```python
+from werewolf.prompt_levels import (
+    get_werewolf_system,  # Level 1 (cached)
+    GameStateSummary,      # Level 2
+    DecisionPrompt,       # Level 3
+    build_decision_prompt,
+)
+```
 
 **Key Response Formats**:
 | Phase | Expected Response |
@@ -124,5 +153,5 @@ Prompts are defined as module-level constants in each handler (e.g., `PROMPT_LAS
 - [RULES.md](RULES.md) - Complete game rules
 - [PHASES.md](PHASES.md) - Detailed phase definitions and flows
 - [PHASE_HANDLERS.md](PHASE_HANDLERS.md) - Handler input/output specs
-- [PROMPTS.md](PROMPTS.md) - AI prompt templates by phase
+- [prompts.py](src/werewolf/prompts.py) - AI prompt templates by phase
 - [PLAN.md](PLAN.md) - Implementation plan and testing strategy

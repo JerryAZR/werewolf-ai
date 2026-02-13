@@ -15,6 +15,11 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.models.player import Player, Role
+from werewolf.prompt_levels import (
+    get_guard_system,
+    make_guard_context,
+    build_guard_decision,
+)
 
 
 def _get_choice_spec_helpers():
@@ -206,61 +211,21 @@ class GuardHandler:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        living_players_sorted = sorted(context.living_players)
+        # Get static system prompt (Level 1)
+        system = get_guard_system()
 
-        # Build system prompt
-        system = f"""You are the Guard on Night {context.day}.
+        # Build game state context (Level 2)
+        state_context = make_guard_context(
+            context=context,
+            your_seat=for_seat,
+            guard_prev_target=guard_prev_target,
+        )
 
-YOUR ROLE:
-- You can protect ONE player each night from werewolf kills
-- You CAN protect yourself
-- You CANNOT protect the same person two nights in a row
-- You may choose to skip (not protect anyone)
+        # Build decision prompt (Level 3)
+        decision = build_guard_decision(state_context)
 
-IMPORTANT RULES:
-1. You cannot see who werewolves targeted - you must predict
-2. Protecting yourself is allowed and sometimes wise
-3. If you protected someone last night, you must choose a different target
-
-Your response should be in format: TARGET_SEAT or "SKIP"
-- Example: "7" (protect player at seat 7)
-- Example: "SKIP" (don't protect anyone tonight)"""
-
-        # Build user prompt with visible game state
-        prev_target_info = ""
-        if guard_prev_target is not None:
-            prev_target_info = f"""
-IMPORTANT - LAST NIGHT:
-- You protected player at seat {guard_prev_target}
-- You CANNOT protect seat {guard_prev_target} again tonight!"""
-
-        living_seats_str = ', '.join(map(str, living_players_sorted))
-
-        user = f"""=== Night {context.day} - Guard Action ===
-
-YOUR IDENTITY:
-  You are the Guard at seat {for_seat}
-
-LIVING PLAYERS (seat numbers): {living_seats_str}{prev_target_info}
-
-AVAILABLE ACTIONS:
-
-1. PROTECT A PLAYER
-   Description: Choose one living player to protect tonight
-   Format: <seat_number>
-   Example: 7
-   Notes:
-     - You CAN protect yourself (enter your seat number)
-     - You CANNOT protect someone you protected last night
-
-2. SKIP
-   Description: Don't protect anyone tonight
-   Format: SKIP
-   Example: SKIP
-   Notes:
-     - Use this if all good players were already protected recently
-
-Enter your choice (e.g., "7" or "SKIP"):"""
+        # Use LLM format for user prompt
+        user = decision.to_llm_prompt()
 
         return system, user
 

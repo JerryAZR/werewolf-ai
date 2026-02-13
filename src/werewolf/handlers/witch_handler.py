@@ -15,6 +15,11 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.models.player import Player, Role
+from werewolf.prompt_levels import (
+    get_witch_system,
+    make_witch_context,
+    build_witch_decision,
+)
 
 # Lazy import for ChoiceSpec to avoid circular imports
 def _get_choice_spec():
@@ -215,82 +220,27 @@ class WitchHandler:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        living_players_sorted = sorted(context.living_players)
         antidote_available = not night_actions.antidote_used
         poison_available = not night_actions.poison_used
         kill_target = night_actions.kill_target
 
-        # Build system prompt
-        system = f"""You are the Witch on Night {context.day}.
+        # Get static system prompt (Level 1)
+        system = get_witch_system()
 
-YOUR ROLE:
-- You have ONE antidote (saves werewolf target) and ONE poison (kills any player)
-- The antidote CANNOT be used on yourself
-- The poison IGNORES the Guard's protection
-- You can only use ONE potion per night (antidote OR poison, not both)
-- If you don't use a potion, you can use it in a future night
+        # Build game state context (Level 2)
+        state_context = make_witch_context(
+            context=context,
+            your_seat=for_seat,
+            antidote_available=antidote_available,
+            poison_available=poison_available,
+            werewolf_kill_target=kill_target,
+        )
 
-YOUR POTIONS:
-- Antidote: {'Available' if antidote_available else 'Used'} {'(can save werewolf target)' if antidote_available and kill_target is not None else ''}
-- Poison: {'Available' if poison_available else 'Used'}
+        # Build decision prompt (Level 3)
+        decision = build_witch_decision(state_context)
 
-IMPORTANT RULES:
-1. ANTIDOTE: Target must be the werewolf kill target, and you cannot antidote yourself
-2. POISON: Target can be ANY living player (including werewolves)
-3. PASS: Use PASS if you don't want to use any potion (target must be None)
-
-Your response should be in format: ACTION TARGET
-- Example: "PASS" (no potion)
-- Example: "ANTIDOTE 7" (save player at seat 7)
-- Example: "POISON 3" (poison player at seat 3)"""
-
-        # Build user prompt with visible game state
-        target_info = ""
-        if kill_target is not None:
-            target_info = f"""
-WEREWOLF KILL TARGET: Player at seat {kill_target}
-- If you use ANTIDOTE, you MUST target seat {kill_target}
-- This is the only valid antidote target"""
-
-        living_seats_str = ', '.join(map(str, living_players_sorted))
-
-        user = f"""=== Night {context.day} - Witch Action ===
-
-YOUR IDENTITY:
-  You are the Witch at seat {for_seat}
-
-YOUR POTIONS:
-  - Antidote: {'Available (1 remaining)' if antidote_available else 'Used (0 remaining)'}
-  - Poison: {'Available (1 remaining)' if poison_available else 'Used (0 remaining)'}{target_info}
-
-LIVING PLAYERS (seat numbers): {living_seats_str}
-
-AVAILABLE ACTIONS:
-
-1. PASS
-   Description: Do nothing this night
-   Format: PASS
-   Example: PASS
-
-2. ANTIDOTE (requires antidote available + werewolf kill target)
-   Description: Save the werewolf kill target from death
-   Format: ANTIDOTE <seat>
-   Example: ANTIDOTE 7
-   Requirements:
-     - Antidote must not be used yet
-     - Target must be the werewolf kill target
-     - Target cannot be yourself
-
-3. POISON (requires poison available)
-   Description: Kill any living player (ignores Guard protection)
-   Format: POISON <seat>
-   Example: POISON 3
-   Requirements:
-     - Poison must not be used yet
-     - Target must be a living player
-     - Target can be anyone (werewolf, yourself, etc.)
-
-Enter your action (e.g., "PASS", "ANTIDOTE 7", or "POISON 3"):"""
+        # Use LLM format for user prompt
+        user = decision.to_llm_prompt()
 
         return system, user
 

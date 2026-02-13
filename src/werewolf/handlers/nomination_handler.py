@@ -15,6 +15,11 @@ from werewolf.events.game_events import (
 )
 from werewolf.models.player import Player, Role
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType
+from werewolf.prompt_levels import (
+    get_nomination_system,
+    make_nomination_context,
+    build_nomination_decision,
+)
 
 
 # ============================================================================
@@ -180,51 +185,21 @@ class NominationHandler:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
+        # Level 1: Static system prompt (role rules only)
+        system = get_nomination_system()
+
+        # Level 2: Game state context
+        state_context = make_nomination_context(context=context, your_seat=for_seat)
+
+        # Get player's role for Level 3
         player = context.get_player(for_seat)
         role_name = player.role.value if player else "Unknown"
-        is_alive = context.is_alive(for_seat)
 
-        # Build system prompt
-        system = f"""You are deciding whether to run for Sheriff on Day {context.day}.
+        # Level 3: Decision prompt
+        decision = build_nomination_decision(state_context, role=role_name)
 
-SHERIFF POWERS:
-- The Sheriff has 1.5x vote weight during voting phases
-- If eliminated, the Sheriff can transfer the badge to another player
-- The Sheriff speaks LAST during all discussion phases
-
-NOMINATION RULES:
-- You may choose to run for Sheriff or decline
-- If you run, you will give a campaign speech (optional, can opt-out during speech)
-- If you decline, you will not appear in the election
-- Your decision is private until all players have nominated
-
-Your response should be exactly one of:
-- "run" - You want to run for Sheriff
-- "not running" - You decline to run for Sheriff"""
-
-        # Build user prompt
-        alive_status = "Living" if is_alive else "Dead"
-        user = f"""=== Day {context.day} - Sheriff Nomination ===
-
-YOUR INFORMATION:
-  Your seat: {for_seat}
-  Your role: {role_name}
-  Status: {alive_status}
-
-SHERIFF POWERS:
-  - 1.5x vote weight during voting phases
-  - Can transfer badge if eliminated
-  - Speaks LAST during discussions
-
-NOMINATION DECISION:
-  You may either:
-  - "run" - Declare your candidacy for Sheriff
-  - "not running" - Decline to run for Sheriff
-
-If you run, you will have a chance to give a campaign speech later.
-Your nomination decision is private until all players have responded.
-
-Enter your decision:"""
+        # Build user prompt (combine Level 2 context + Level 3 decision)
+        user = decision.to_llm_prompt()
 
         return system, user
 

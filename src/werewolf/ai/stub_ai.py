@@ -5,6 +5,7 @@ Useful for integration tests and development testing.
 """
 
 import random
+import json
 from typing import Optional, Protocol, Any
 
 
@@ -117,3 +118,176 @@ VoterAI = StubPlayer
 LastWordsAI = StubPlayer
 HunterShootAI = StubPlayer
 BadgeTransferAI = StubPlayer
+
+
+# ============================================================================
+# Debug Stub Player - Prints all prompts for inspection
+# ============================================================================
+
+class DebugStubPlayer:
+    """A stub AI that prints ALL prompts and choices for debugging.
+
+    This is useful for understanding what prompts are sent to players during
+    a game, and what structured choices are available at each decision point.
+
+    Usage:
+        participants = {seat: DebugStubPlayer(seat) for seat in players}
+    """
+
+    def __init__(self, seat: int, verbose: bool = True):
+        self.seat = seat
+        self.verbose = verbose
+        self._rng = random.Random(42 + seat)  # Deterministic choices
+        self._call_count = 0
+
+    async def decide(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        hint: Optional[str] = None,
+        choices: Optional[Any] = None,
+    ) -> str:
+        """Print prompt info and return a valid response."""
+        self._call_count += 1
+        call_num = self._call_count
+
+        if not self.verbose:
+            # Just make a choice without printing
+            if choices is not None:
+                return self._choose_from_spec(choices)
+            return DEFAULT_SPEECH
+
+        # Print comprehensive debug info
+        print(f"\n{'='*70}")
+        print(f"DEBUG STUB #{call_num} | Seat {self.seat}")
+        print(f"{'='*70}")
+
+        # Parse and display phase info from user_prompt
+        phase_info = self._extract_phase_info(user_prompt)
+        if phase_info:
+            print(f"PHASE: {phase_info}")
+
+        print(f"\n--- SYSTEM PROMPT ({len(system_prompt)} chars) ---")
+        print(system_prompt[:500] + "..." if len(system_prompt) > 500 else system_prompt)
+
+        print(f"\n--- USER PROMPT ({len(user_prompt)} chars) ---")
+        # Show just the last part with the actual decision question
+        lines = user_prompt.split('\n')
+        for line in lines[-10:]:
+            print(line)
+        if len(lines) > 10:
+            print(f"  ... ({len(lines) - 10} more lines)")
+
+        if hint:
+            print(f"\n--- HINT ---")
+            print(hint)
+
+        # Format and display choices
+        choice_info = self._format_choices(choices)
+        if choice_info:
+            print(f"\n--- CHOICES ({len(choice_info['options'])} options) ---")
+            for i, opt in enumerate(choice_info['options'], 1):
+                print(f"  {i}. [{opt['value']}] {opt['display']}")
+            if choice_info.get('allow_none'):
+                print(f"  {len(choice_info['options']) + 1}. [skip/none] Skip/Pass")
+
+        # Make deterministic choice
+        if choices is not None:
+            response = self._choose_from_spec(choices)
+        else:
+            response = DEFAULT_SPEECH
+
+        print(f"\n>>> RESPONSE: {response}")
+        print(f"{'='*70}\n")
+
+        return response
+
+    def _extract_phase_info(self, user_prompt: str) -> Optional[str]:
+        """Extract phase/subphase info from the user prompt."""
+        # Look for section headers like "=== Day 1 - Sheriff Election ==="
+        lines = user_prompt.split('\n')
+        for line in lines[:5]:  # Check first few lines
+            if line.strip().startswith('==='):
+                return line.strip().strip('=').strip()
+        return None
+
+    def _format_choices(self, choices: Any) -> Optional[dict]:
+        """Format choices into a structured dict for display."""
+        if choices is None:
+            return None
+
+        result = {'options': [], 'allow_none': False}
+
+        # Handle ChoiceSpec objects
+        if hasattr(choices, 'options') and choices.options:
+            opts = choices.options
+            if hasattr(opts[0], 'value'):
+                # List of ChoiceOption objects
+                for opt in opts:
+                    result['options'].append({
+                        'value': str(opt.value),
+                        'display': str(opt.display),
+                        'seat_hint': opt.seat_hint,
+                    })
+            elif isinstance(opts[0], tuple):
+                # List of (display, value) tuples
+                for display, value in opts:
+                    result['options'].append({
+                        'value': str(value),
+                        'display': str(display),
+                    })
+            result['allow_none'] = getattr(choices, 'allow_none', False)
+            result['prompt'] = getattr(choices, 'prompt', '')
+            result['choice_type'] = getattr(choices, 'choice_type', '')
+
+        # Handle list of tuples
+        elif isinstance(choices, list) and choices:
+            if isinstance(choices[0], tuple):
+                for display, value in choices:
+                    result['options'].append({
+                        'value': str(value),
+                        'display': str(display),
+                    })
+
+        # Handle dict
+        elif isinstance(choices, dict) and choices:
+            for key, value in choices.items():
+                result['options'].append({
+                    'value': str(value),
+                    'display': str(key),
+                })
+
+        return result if result['options'] else None
+
+    def _choose_from_spec(self, choices: Any) -> str:
+        """Pick a valid response from ChoiceSpec options."""
+        if hasattr(choices, 'options') and choices.options:
+            opts = choices.options
+            if hasattr(opts[0], 'value'):
+                values = [str(opt.value) for opt in opts]
+            elif isinstance(opts[0], tuple):
+                values = [str(v) for _, v in opts]
+            else:
+                values = [str(v) for v in opts]
+            if values:
+                return str(self._rng.choice(values))
+            if hasattr(choices, 'allow_none') and choices.allow_none:
+                return "-1"
+            raise ValueError("ChoiceSpec has no valid options")
+
+        if isinstance(choices, list) and choices:
+            if isinstance(choices[0], tuple):
+                values = [str(v) for _, v in choices]
+                return str(self._rng.choice(values))
+
+        if isinstance(choices, dict) and choices:
+            values = list(choices.values())
+            if values:
+                return str(self._rng.choice(values))
+
+        return DEFAULT_SPEECH
+
+
+def create_debug_stub_player(seat: int, verbose: bool = True) -> DebugStubPlayer:
+    """Create a debug stub player for a given seat."""
+    return DebugStubPlayer(seat=seat, verbose=verbose)

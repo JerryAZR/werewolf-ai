@@ -16,6 +16,11 @@ from werewolf.events.game_events import (
     DeathEvent,
 )
 from werewolf.models.player import Player, Role
+from werewolf.prompt_levels import (
+    get_discussion_system,
+    make_discussion_context,
+    build_discussion_decision,
+)
 
 
 # ============================================================================
@@ -283,73 +288,41 @@ class DiscussionHandler:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        # Get player's own role (for their own context)
-        player = context.get_player(for_seat)
-        role_name = player.role.value if player else "Unknown"
-
-        # Living players (seats only, no roles)
-        living_players_str = ', '.join(map(str, sorted(context.living_players)))
-
-        # Position in speaking order
-        position = speaking_order.index(for_seat) + 1
-        total = len(speaking_order)
-
-        # Sheriff info
-        sheriff_info = ""
-        if context.sheriff is not None:
-            sheriff_status = "You ARE the Sheriff" if context.sheriff == for_seat else f"Seat {context.sheriff} is the Sheriff"
-            sheriff_info = f"\n- {sheriff_status} (speaks LAST)"
-
-        # Previous speeches
+        # Previous speeches text
         prev_speeches_text = ""
         if previous_speeches:
-            prev_speeches_text = "\n\nPREVIOUS SPEECHES:\n"
-            for i, speech in enumerate(previous_speeches):
-                prev_speeches_text += f"  Seat {speech.actor}: {speech.content[:200]}{'...' if len(speech.content) > 200 else ''}\n"
+            prev_speeches_text = "PREVIOUS SPEECHES:\n"
+            for speech in previous_speeches:
+                preview = speech.content[:200] + ('...' if len(speech.content) > 200 else '')
+                prev_speeches_text += f"  Seat {speech.actor}: {preview}\n"
 
         # Last words from morning deaths
         last_words_text = ""
         if last_words:
-            last_words_text = "\n\nLAST WORDS FROM THIS MORNING:\n"
+            last_words_text = "LAST WORDS FROM THIS MORNING:\n"
             for seat, words in sorted(last_words.items()):
-                last_words_text += f"  Seat {seat}: {words[:200]}{'...' if len(words) > 200 else ''}\n"
+                preview = words[:200] + ('...' if len(words) > 200 else '')
+                last_words_text += f"  Seat {seat}: {preview}\n"
 
-        # Build system prompt
-        system = f"""You are speaking during Day {context.day} discussion phase.
+        # Level 1: Static system prompt (role rules only)
+        system = get_discussion_system()
 
-DISCUSSION RULES:
-- All living players will speak once before voting begins
-- You speak in position {position} of {total}
-- The Sheriff speaks LAST and has 1.5x vote weight
-- You may reveal your role or keep it hidden - choose what benefits your strategy
-- You can share information strategically (like Seer findings) but be careful
-- Your goal is to influence the vote and avoid being eliminated
+        # Level 2: Game state context
+        state_context = make_discussion_context(
+            context=context,
+            your_seat=for_seat,
+            speaking_order=speaking_order,
+        )
 
-What makes a good discussion speech:
-- Analyze the current game state
-- Share suspicions about other players
-- Defend yourself if you're under suspicion
-- Try to build trust or cast doubt on others
-- Consider your role strategy
+        # Level 3: Decision prompt (with additional text from events)
+        decision = build_discussion_decision(
+            state_context,
+            previous_speeches_text=prev_speeches_text,
+            last_words_text=last_words_text,
+        )
 
-Your response should be your discussion speech as a single string.
-Be persuasive and strategic!"""
-
-        # Build user prompt
-        user = f"""=== Day {context.day} - Your Discussion Speech ===
-
-YOUR INFORMATION:
-  Your seat: {for_seat}
-  Your role: {role_name} (keep this secret!)
-  Speaking position: {position} of {total}{sheriff_info}
-
-LIVING PLAYERS (seats): {living_players_str}
-
-DEAD PLAYERS: {', '.join(map(str, sorted(context.dead_players))) if context.dead_players else 'None'}
-
-{prev_speeches_text}{last_words_text}
-Enter your discussion speech below:
-(Must be non-empty - make it strategic!)"""
+        # Build user prompt (combine Level 2 context + Level 3 decision)
+        user = decision.to_llm_prompt()
 
         return system, user
 

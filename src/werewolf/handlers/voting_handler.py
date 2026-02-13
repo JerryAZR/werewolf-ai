@@ -21,6 +21,11 @@ from werewolf.events.game_events import (
     GameEvent,
 )
 from werewolf.ui.choices import ChoiceSpec, ChoiceOption, ChoiceType, make_seat_choice
+from werewolf.prompt_levels import (
+    get_voting_system,
+    make_voting_context,
+    build_voting_decision,
+)
 
 
 # ============================================================================
@@ -265,47 +270,17 @@ class VotingHandler:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        # Filter visible information - only seat numbers
-        other_living = sorted(seat for seat in living_players if seat != voter_seat)
-        living_str = ', '.join(map(str, other_living))
+        # Level 1: Static system prompt (role rules only)
+        system = get_voting_system()
 
-        # Check if voter is Sheriff (vote weight = 1.5)
-        is_sheriff = voter_seat == context.sheriff
-        weight_note = " Your vote counts as 1.5!" if is_sheriff else ""
+        # Level 2: Game state context
+        state_context = make_voting_context(context=context, your_seat=voter_seat)
 
-        # Build system prompt
-        system = f"""You are casting your vote on Day {context.day} to decide who will be banished from the village.
+        # Level 3: Decision prompt
+        decision = build_voting_decision(state_context)
 
-VOTING RULES:
-- You may vote for any living player (seat numbers only)
-- You may also abstain (vote for no one)
-- Your vote is secret - no one will see who you voted for
-- The player with the most votes is banished (tie = no banishment){weight_note}
-
-LIVING PLAYERS (seat numbers): {living_str}
-
-Your response must be either:
-- A seat number of the player you want to banish
-- "None" or "abstain" to not vote for anyone"""
-
-        # Build user prompt
-        user = f"""=== Day {context.day} - Voting Phase ===
-
-YOUR SEAT: {voter_seat}
-{'[SHERIFF - Your vote counts as 1.5!]' if is_sheriff else ''}
-
-LIVING PLAYERS YOU CAN VOTE FOR:
-  Seats: {living_str}
-
-RULES:
-  - You may vote for any living player
-  - You may also abstain by typing "None"
-  - Your vote is secret
-
-VOTE INSTRUCTIONS:
-  Enter the seat number of the player you want to banish,
-  or "None" to abstain:
-  """
+        # Build user prompt (combine Level 2 context + Level 3 decision)
+        user = decision.to_llm_prompt()
 
         return system, user
 
