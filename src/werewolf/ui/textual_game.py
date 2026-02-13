@@ -131,8 +131,8 @@ class WerewolfUI(App):
     """
 
     BINDINGS = [
-        Binding("q", "quit", "Quit", show=False),
-        Binding("escape", "quit", "Quit", show=False),
+        Binding("q", "quit_with_confirm", "Quit", show=False),
+        Binding("escape", "quit_with_confirm", "Quit", show=False),
     ]
 
     def __init__(self, seed: int, human_seat: int):
