@@ -51,8 +51,14 @@ def create_players(seed: int) -> dict[int, Player]:
 async def run_ai_simulation(
     seed: int,
     validator: GameValidator | None = None,
+    log_file: str | None = "game_log.txt",
 ) -> str:
     """Run a game with all AI players (for spectators).
+
+    Args:
+        seed: Random seed for the game
+        validator: Optional game validator
+        log_file: File to save event log (None to disable)
 
     Returns:
         The winner string.
@@ -81,7 +87,14 @@ async def run_ai_simulation(
         title="Result"
     ))
 
-    console.print("\n" + str(event_log))
+    # Save event log to file
+    if log_file:
+        try:
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.write(str(event_log))
+            console.print(f"Event log saved to {log_file}")
+        except Exception as e:
+            console.print(f"[red]Failed to save log: {e}[/red]")
 
     return winner
 
@@ -247,6 +260,12 @@ def main():
         action="store_true",
         help="Run AI vs AI simulation (overrides default human mode)"
     )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default="game_log.txt",
+        help="File to save game event log (default: game_log.txt, use '' to disable)"
+    )
 
     args = parser.parse_args()
 
@@ -270,11 +289,11 @@ def main():
         run_stress_test(args.games, seed_base=args.seed)
     elif args.ai or args.watch:
         # AI vs AI mode (explicit --ai or --watch flag)
-        asyncio.run(run_ai_simulation(args.seed, validator=validator))
+        asyncio.run(run_ai_simulation(args.seed, validator=validator, log_file=args.log_file))
     else:
         # Default: single human player with Textual UI
         random_seat = random.randint(0, 11)
-        asyncio.run(WerewolfUI(args.seed, random_seat).run_async())
+        asyncio.run(WerewolfUI(args.seed, random_seat, args.log_file).run_async())
 
     return 0
 

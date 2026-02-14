@@ -135,10 +135,11 @@ class WerewolfUI(App):
         Binding("escape", "quit_with_confirm", "Quit", show=False),
     ]
 
-    def __init__(self, seed: int, human_seat: int):
+    def __init__(self, seed: int, human_seat: int, log_file: str = "game_log.txt"):
         super().__init__()
         self.seed = seed
         self.seat = human_seat
+        self.log_file = log_file if log_file else None
         self._choice_request: Optional[ChoiceRequest] = None
         self._current_list_view: Optional[ListView] = None
         self._current_input: Optional[Input] = None
@@ -377,12 +378,21 @@ class WerewolfUI(App):
 
             event_log, winner = await game.run()
 
-            # Show result
+            # Show result in UI
             self._write("")
             self._write("=" * 50)
             self._write("GAME OVER")
             self._write(f"Winner: {winner}")
             self._write("=" * 50)
+
+            # Save event log to file
+            if self.log_file:
+                try:
+                    with open(self.log_file, "w", encoding="utf-8") as f:
+                        f.write(str(event_log))
+                    self._write(f"Event log saved to {self.log_file}")
+                except Exception as e:
+                    self._write(f"[red]Failed to save log: {e}[/red]")
         except asyncio.CancelledError:
             self._write("\n[yellow]Game cancelled.[/yellow]")
         except Exception as e:
