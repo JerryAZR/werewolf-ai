@@ -117,7 +117,7 @@ class NominationHandler:
         context: "PhaseContext",
         for_seat: int,
         events_so_far: list[GameEvent] | None = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Build filtered prompts for nomination decision.
 
         Args:
@@ -126,7 +126,7 @@ class NominationHandler:
             events_so_far: All game events for public visibility filtering
 
         Returns:
-            Tuple of (system_prompt, user_prompt)
+            Tuple of (system_prompt, llm_user_prompt, human_user_prompt)
         """
         # Get public events using the visibility filter
         public_events = get_public_events(
@@ -160,10 +160,11 @@ class NominationHandler:
             public_events_text=public_events_text,
         )
 
-        # Build user prompt (combine Level 2 context + Level 3 decision)
-        user = decision.to_llm_prompt()
+        # Build both LLM and human format user prompts
+        llm_user = decision.to_llm_prompt()
+        human_user = decision.to_tui_prompt()
 
-        return system, user
+        return system, llm_user, human_user
 
     def _build_choices(self) -> ChoiceSpec:
         """Build ChoiceSpec for nomination decision.
@@ -206,8 +207,12 @@ class NominationHandler:
         # Build choices for TUI rendering
         choices = self._build_choices()
 
+        # Build both prompt formats
+        system, llm_user, human_user = self._build_prompts(context, for_seat, events_so_far)
+
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, for_seat, events_so_far)
+            # Select appropriate prompt format based on participant type
+            user = human_user if getattr(participant, 'is_human', False) else llm_user
 
             # Add hint for retry attempts
             hint = None

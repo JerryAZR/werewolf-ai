@@ -28,7 +28,7 @@ from rich.panel import Panel
 from werewolf.models import Player, create_players_from_config
 from werewolf.engine import WerewolfGame, CollectingValidator
 from werewolf.engine.validator import GameValidator
-from werewolf.ai.stub_ai import create_stub_player
+from werewolf.ai.stub_ai import create_stub_player, create_capturing_stub_player, CapturingStubPlayer
 from werewolf.post_game_validator import PostGameValidator
 from werewolf.ui.textual_game import WerewolfUI
 
@@ -53,25 +53,35 @@ async def run_ai_simulation(
     seed: int,
     validator: GameValidator | None = None,
     log_file: str | None = "game_log.txt",
-) -> str:
+    capture: bool = False,
+) -> tuple[str, list[dict] | None]:
     """Run a game with all AI players (for spectators).
 
     Args:
         seed: Random seed for the game
         validator: Optional game validator
         log_file: File to save event log (None to disable)
+        capture: If True, use CapturingStubPlayer to capture prompts
 
     Returns:
-        The winner string.
+        Tuple of (winner string, captured prompts list or None)
     """
     console = Console()
     console.print(f"\n[bold]Running AI simulation (seed {seed})...[/bold]\n")
 
     players = create_players(seed)
-    participants = {
-        seat: create_stub_player(seed=seed + seat)
-        for seat in players.keys()
-    }
+
+    # Create participants - use capturing stubs if requested
+    if capture:
+        capturing_stubs: dict[int, CapturingStubPlayer] = {}
+        for seat in players.keys():
+            capturing_stubs[seat] = create_capturing_stub_player(seat=seat, seed=seed + seat)
+        participants = capturing_stubs
+    else:
+        participants = {
+            seat: create_stub_player(seed=seed + seat)
+            for seat in players.keys()
+        }
 
     game = WerewolfGame(
         players=players,
@@ -97,7 +107,27 @@ async def run_ai_simulation(
         except Exception as e:
             console.print(f"[red]Failed to save log: {e}[/red]")
 
-    return winner
+    # Print captured prompts if requested
+    captured = None
+    if capture:
+        captured = []
+        for seat, stub in capturing_stubs.items():
+            calls = stub.get_captured_calls()
+            if calls:
+                captured.extend(calls)
+
+        # Print summary of captured prompts
+        console.print(f"\n[bold]Captured {len(captured)} decision calls:[/bold]")
+        for call in captured:
+            console.print(f"\n--- Call #{call['call_num']} | Seat {call['seat']} ---")
+            console.print(f"[cyan]Role:[/cyan] {call.get('role_reminder', 'N/A')}")
+            console.print(f"[cyan]Situation:[/cyan]")
+            console.print(call['user_prompt'][:500] if call['user_prompt'] else "(none)")
+            if call.get('choices'):
+                console.print(f"[cyan]Choices:[/cyan] {len(call['choices'].get('options', []))} options")
+            console.print(f"[cyan]Response:[/cyan] {call['response']}")
+
+    return winner, captured
 
 
 def run_stress_test(
@@ -273,6 +303,11 @@ def main():
         default="game_log.txt",
         help="File to save game event log (default: game_log.txt, use '' to disable)"
     )
+    parser.add_argument(
+        "--capture",
+        action="store_true",
+        help="Capture prompts for all players and print after game (for debugging human prompts)"
+    )
 
     args = parser.parse_args()
 
@@ -296,7 +331,7 @@ def main():
         run_stress_test(args.games, seed_base=args.seed)
     elif args.ai or args.watch:
         # AI vs AI mode (explicit --ai or --watch flag)
-        asyncio.run(run_ai_simulation(args.seed, validator=validator, log_file=args.log_file))
+        asyncio.run(run_ai_simulation(args.seed, validator=validator, log_file=args.log_file, capture=args.capture))
     else:
         # Default: single human player with Textual UI
         random_seat = random.randint(0, 11)

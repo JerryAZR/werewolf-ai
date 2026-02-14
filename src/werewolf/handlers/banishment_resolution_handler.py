@@ -228,7 +228,8 @@ class BanishmentResolutionHandler:
 
         # If participant available, query them
         if participant is not None:
-            system, user = self._build_last_words_prompts(context, seat, day, events_so_far)
+            system, llm_user, human_user = self._build_last_words_prompts(context, seat, day, events_so_far)
+            user = human_user if getattr(participant, 'is_human', False) else llm_user
             try:
                 response = await participant.decide(system, user)
                 if response and len(response.strip()) >= 10:
@@ -245,7 +246,7 @@ class BanishmentResolutionHandler:
         seat: int,
         day: int,
         events_so_far: Optional[list[GameEvent]] = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Build system and user prompts for last words.
 
         Args:
@@ -255,7 +256,7 @@ class BanishmentResolutionHandler:
             events_so_far: Previous game events for public visibility filtering
 
         Returns:
-            (system_prompt, user_prompt)
+            (system_prompt, llm_user_prompt, human_user_prompt)
         """
         # Get public events
         public_events = get_public_events(events_so_far or [], day, seat)
@@ -279,10 +280,11 @@ class BanishmentResolutionHandler:
             public_events_text=public_events_text,
         )
 
-        # Build user prompt
-        user = decision.to_llm_prompt()
+        # Build both LLM and human user prompts
+        llm_user = decision.to_llm_prompt()
+        human_user = decision.to_tui_prompt()
 
-        return system, user
+        return system, llm_user, human_user
 
     def _generate_last_words_template(
         self,
@@ -413,8 +415,10 @@ class BanishmentResolutionHandler:
             public_events_text=public_events_text,
         )
 
-        # Build user prompt
-        user = decision.to_llm_prompt()
+        # Build both LLM and human user prompts
+        llm_user = decision.to_llm_prompt()
+        human_user = decision.to_tui_prompt()
+        user = human_user if getattr(participant, 'is_human', False) else llm_user
 
         # Build choices using the handler's method (returns ChoiceSpec)
         choices = self._build_hunter_shoot_choices(context, hunter_seat)
@@ -597,8 +601,10 @@ class BanishmentResolutionHandler:
             public_events_text=public_events_text,
         )
 
-        # Build user prompt
-        user = decision.to_llm_prompt()
+        # Build both LLM and human user prompts
+        llm_user = decision.to_llm_prompt()
+        human_user = decision.to_tui_prompt()
+        user = human_user if getattr(participant, 'is_human', False) else llm_user
 
         # Build choices using the handler's method (returns ChoiceSpec)
         choices = self._build_badge_transfer_choices(context, sheriff_seat)

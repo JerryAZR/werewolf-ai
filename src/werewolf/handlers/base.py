@@ -62,6 +62,16 @@ class Participant(Protocol):
     the participant's decision-making with structured choices.
     """
 
+    @property
+    def is_human(self) -> bool:
+        """Whether this is a human player (vs AI).
+
+        Handlers use this to determine which prompt format to use:
+        - True: Human-friendly prompts (concise, assumes rule knowledge)
+        - False: LLM-friendly prompts (verbose, includes all context)
+        """
+        ...
+
     async def decide(
         self,
         system_prompt: str,

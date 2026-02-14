@@ -37,16 +37,24 @@ class MockParticipant:
         self,
         response: str | None = None,
         response_iter: list[str] | None = None,
+        is_human: bool = False,
     ):
         """Initialize with a single response or an iterator of responses.
 
         Args:
             response: Single response string to return
             response_iter: Optional list of responses to return in sequence
+            is_human: Whether this mock represents a human player
         """
         self._response = response
         self._response_iter = response_iter
         self._call_count = 0
+        self._is_human = is_human
+
+    @property
+    def is_human(self) -> bool:
+        """Whether this is a human player."""
+        return self._is_human
 
     async def decide(
         self,

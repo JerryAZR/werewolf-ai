@@ -175,7 +175,7 @@ class CampaignHandler:
         for_seat: int,
         candidates: list[int],
         events_so_far: list[GameEvent] | None = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Build filtered prompts for campaign speech.
 
         Args:
@@ -185,7 +185,7 @@ class CampaignHandler:
             events_so_far: All game events for public visibility filtering
 
         Returns:
-            Tuple of (system_prompt, user_prompt)
+            Tuple of (system_prompt, llm_user_prompt, human_user_prompt)
         """
         # Get public events using the visibility filter
         public_events = get_public_events(
@@ -264,7 +264,8 @@ CAMPAIGN RESPONSE:
 
   Your response:"""
 
-        return system, user
+        # For this prompt, LLM and human formats are the same
+        return system, user, user
 
     def _build_speech_prompt(
         self,
@@ -273,7 +274,7 @@ CAMPAIGN RESPONSE:
         for_seat: int,
         candidates: list[int],
         events_so_far: list[GameEvent] | None = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Build prompts for speech or explanation (Stage 2 of 2).
 
         Args:
@@ -284,7 +285,7 @@ CAMPAIGN RESPONSE:
             events_so_far: All game events for public visibility filtering
 
         Returns:
-            Tuple of (system_prompt, user_prompt)
+            Tuple of (system_prompt, llm_user_prompt, human_user_prompt)
         """
         # Get public events using the visibility filter
         public_events = get_public_events(
@@ -332,6 +333,10 @@ WITHDRAWAL EXPLANATION:
   Your explanation will be visible to all players.
 
   Your response:"""
+
+            # For free-form text, LLM and human prompts are the same
+            llm_user = user
+            human_user = user
         else:
             # Campaign speech
             system = f"""You have chosen to stay in the Sheriff race on Day {context.day}.
@@ -364,7 +369,11 @@ CAMPAIGN SPEECH:
 
   Your response:"""
 
-        return system, user
+            # For free-form text, LLM and human prompts are the same
+            llm_user = user
+            human_user = user
+
+        return system, llm_user, human_user
 
     async def _get_valid_decision(
         self,
@@ -420,9 +429,14 @@ CAMPAIGN SPEECH:
 
         for attempt in range(self.max_retries):
             # Query for stay/opt-out selection using proper prompts
+            # Build both LLM and human format user prompts
+            llm_user = decision.to_llm_prompt()
+            human_user = decision.to_tui_prompt()
+            user = human_user if getattr(participant, 'is_human', False) else llm_user
+
             selection = await participant.decide(
                 system_prompt=get_campaign_opt_out_system(),
-                user_prompt=decision.to_llm_prompt(),
+                user_prompt=user,
                 hint=decision.hint or 'Please enter either "stay" or "opt-out".',
                 choices=choice_spec,
             )
@@ -432,7 +446,7 @@ CAMPAIGN SPEECH:
 
             if selection_lower == "stay":
                 # Stage 2: Get campaign speech (free-form)
-                system, user = self._build_speech_prompt(
+                system, llm_user, human_user = self._build_speech_prompt(
                     is_opt_out=False,
                     context=context,
                     for_seat=for_seat,
@@ -441,6 +455,7 @@ CAMPAIGN SPEECH:
                 )
 
                 for speech_attempt in range(self.max_retries):
+                    user = human_user if getattr(participant, 'is_human', False) else llm_user
                     speech = await participant.decide(
                         system_prompt=system,
                         user_prompt=user,
@@ -466,7 +481,7 @@ CAMPAIGN SPEECH:
 
             elif selection_lower == "opt-out":
                 # Stage 2: Get explanation for withdrawing (free-form)
-                system, user = self._build_speech_prompt(
+                system, llm_user, human_user = self._build_speech_prompt(
                     is_opt_out=True,
                     context=context,
                     for_seat=for_seat,
@@ -475,6 +490,7 @@ CAMPAIGN SPEECH:
                 )
 
                 # Still need to get explanation, but don't create Speech event
+                user = human_user if getattr(participant, 'is_human', False) else llm_user
                 await participant.decide(
                     system_prompt=system,
                     user_prompt=user,

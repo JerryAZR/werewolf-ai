@@ -309,7 +309,7 @@ class DiscussionHandler:
         guard_prev_target: int | None = None,
         witch_potions: dict[str, int | None] | None = None,
         events_so_far: list[GameEvent] | None = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Build filtered prompts for discussion speech.
 
         Args:
@@ -322,7 +322,7 @@ class DiscussionHandler:
             events_so_far: All game events for public visibility filtering
 
         Returns:
-            Tuple of (system_prompt, user_prompt)
+            Tuple of (system_prompt, llm_user_prompt, human_user_prompt)
         """
         # Get public events using the visibility filter
         public_events = get_public_events(
@@ -358,10 +358,11 @@ class DiscussionHandler:
             public_events_text=public_events_text,
         )
 
-        # Build user prompt (combine Level 2 context + Level 3 decision)
-        user = decision.to_llm_prompt()
+        # Build both LLM and human user prompts
+        llm_user = decision.to_llm_prompt()
+        human_user = decision.to_tui_prompt()
 
-        return system, user
+        return system, llm_user, human_user
 
     async def _get_valid_speech(
         self,
@@ -394,7 +395,7 @@ class DiscussionHandler:
             MaxRetriesExceededError: If max retries are exceeded
         """
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(
+            system, llm_user, human_user = self._build_prompts(
                 context=context,
                 for_seat=for_seat,
                 speaking_order=speaking_order,
@@ -403,6 +404,9 @@ class DiscussionHandler:
                 witch_potions=witch_potions,
                 events_so_far=events_so_far,
             )
+
+            # Select appropriate prompt format based on participant type
+            user = human_user if getattr(participant, 'is_human', False) else llm_user
 
             # Add hint for retry attempts
             hint = None

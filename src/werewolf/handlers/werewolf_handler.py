@@ -154,7 +154,7 @@ class WerewolfHandler:
         context: "PhaseContext",
         for_seat: int,
         events_so_far: list[GameEvent] | None = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Build filtered prompts for werewolf.
 
         Args:
@@ -163,7 +163,7 @@ class WerewolfHandler:
             events_so_far: Previous events in the current night
 
         Returns:
-            Tuple of (system_prompt, user_prompt)
+            Tuple of (system_prompt, llm_user_prompt, human_user_prompt)
         """
         # Get public events using the visibility filter
         public_events = get_public_events(
@@ -195,10 +195,11 @@ class WerewolfHandler:
             public_events_text=public_events_text,
         )
 
-        # Use LLM format for user prompt (includes choices)
-        user = decision.to_llm_prompt()
+        # Build both LLM and human format user prompts
+        llm_user = decision.to_llm_prompt()
+        human_user = decision.to_tui_prompt()
 
-        return system, user
+        return system, llm_user, human_user
 
     def build_choice_spec(
         self,
@@ -253,8 +254,12 @@ class WerewolfHandler:
         # Build ChoiceSpec with valid targets
         choices = self.build_choice_spec(context, for_seat)
 
+        # Build both prompt formats
+        system, llm_user, human_user = self._build_prompts(context, for_seat, events_so_far)
+
         for attempt in range(self.max_retries):
-            system, user = self._build_prompts(context, for_seat, events_so_far)
+            # Select appropriate prompt format based on participant type
+            user = human_user if getattr(participant, 'is_human', False) else llm_user
 
             # Add hint for retry attempts
             hint = None

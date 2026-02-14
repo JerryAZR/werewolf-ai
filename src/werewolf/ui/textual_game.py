@@ -406,6 +406,8 @@ class WerewolfUI(App):
 class TextualParticipant:
     """Async participant using Textual UI."""
 
+    is_human = True  # Human player, uses human prompt format
+
     def __init__(self, seat: int, app: WerewolfUI):
         self.seat = seat
         self._app = app

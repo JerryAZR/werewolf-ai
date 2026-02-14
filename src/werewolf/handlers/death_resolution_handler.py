@@ -250,7 +250,8 @@ class DeathResolutionHandler:
             return self._generate_last_words_template(context, seat)
 
         # Build prompts
-        system, user = self._build_last_words_prompts(context, seat, day, events_so_far)
+        system, llm_user, human_user = self._build_last_words_prompts(context, seat, day, events_so_far)
+        user = human_user if getattr(participant, 'is_human', False) else llm_user
 
         # Query participant
         try:
@@ -270,7 +271,7 @@ class DeathResolutionHandler:
         seat: int,
         day: int,
         events_so_far: Optional[list[GameEvent]] = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Build system and user prompts for last words.
 
         Args:
@@ -280,7 +281,7 @@ class DeathResolutionHandler:
             events_so_far: Previous game events for public visibility filtering
 
         Returns:
-            (system_prompt, user_prompt)
+            (system_prompt, llm_user_prompt, human_user_prompt)
         """
         # Get public events
         public_events = get_public_events(events_so_far or [], day, seat)
@@ -305,10 +306,11 @@ class DeathResolutionHandler:
             public_events_text=public_events_text,
         )
 
-        # Build user prompt
-        user = decision.to_llm_prompt()
+        # Build both LLM and human user prompts
+        llm_user = decision.to_llm_prompt()
+        human_user = decision.to_tui_prompt()
 
-        return system, user
+        return system, llm_user, human_user
 
     def _generate_last_words_template(
         self,
@@ -412,7 +414,8 @@ class DeathResolutionHandler:
             return self._choose_hunter_shoot_target(context, seat)
 
         # Build prompts and choices
-        system, user = self._build_hunter_shoot_prompts(context, seat, day, events_so_far)
+        system, llm_user, human_user = self._build_hunter_shoot_prompts(context, seat, day, events_so_far)
+        user = human_user if getattr(participant, 'is_human', False) else llm_user
         choices = self._build_hunter_shoot_choices(context, seat)
 
         # Query participant with retries
@@ -441,7 +444,7 @@ class DeathResolutionHandler:
         hunter_seat: int,
         day: int,
         events_so_far: Optional[list[GameEvent]] = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Build system and user prompts for hunter shoot decision.
 
         Args:
@@ -451,7 +454,7 @@ class DeathResolutionHandler:
             events_so_far: Previous game events for public visibility filtering
 
         Returns:
-            (system_prompt, user_prompt)
+            (system_prompt, llm_user_prompt, human_user_prompt)
         """
         # Get public events
         public_events = get_public_events(events_so_far or [], day, hunter_seat)
@@ -475,10 +478,11 @@ class DeathResolutionHandler:
             public_events_text=public_events_text,
         )
 
-        # Build user prompt
-        user = decision.to_llm_prompt()
+        # Build both LLM and human user prompts
+        llm_user = decision.to_llm_prompt()
+        human_user = decision.to_tui_prompt()
 
-        return system, user
+        return system, llm_user, human_user
 
     def _build_hunter_shoot_choices(self, context: "PhaseContext", hunter_seat: int) -> ChoiceSpec:
         """Build ChoiceSpec for hunter shoot decision.
@@ -604,7 +608,8 @@ class DeathResolutionHandler:
             return self._choose_badge_heir(context, seat)
 
         # Build prompts
-        system, user = self._build_badge_transfer_prompts(context, seat, day, events_so_far)
+        system, llm_user, human_user = self._build_badge_transfer_prompts(context, seat, day, events_so_far)
+        user = human_user if getattr(participant, 'is_human', False) else llm_user
         choices = self._build_badge_transfer_choices(context, seat)
 
         # Query participant with retries
@@ -651,7 +656,7 @@ class DeathResolutionHandler:
         sheriff_seat: int,
         day: int,
         events_so_far: Optional[list[GameEvent]] = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Build system and user prompts for badge transfer.
 
         Args:
@@ -661,7 +666,7 @@ class DeathResolutionHandler:
             events_so_far: Previous game events for public visibility filtering
 
         Returns:
-            (system_prompt, user_prompt)
+            (system_prompt, llm_user_prompt, human_user_prompt)
         """
         # Get public events
         public_events = get_public_events(events_so_far or [], day, sheriff_seat)
@@ -685,10 +690,11 @@ class DeathResolutionHandler:
             public_events_text=public_events_text,
         )
 
-        # Build user prompt
-        user = decision.to_llm_prompt()
+        # Build both LLM and human user prompts
+        llm_user = decision.to_llm_prompt()
+        human_user = decision.to_tui_prompt()
 
-        return system, user
+        return system, llm_user, human_user
 
     def _parse_badge_transfer_response(
         self,

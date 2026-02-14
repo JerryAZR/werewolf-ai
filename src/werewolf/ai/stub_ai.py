@@ -41,6 +41,8 @@ class StubPlayer:
     2. No choices -> return a generic speech string
     """
 
+    is_human = False  # AI player, uses LLM prompt format
+
     def __init__(self, seed: Optional[int] = None):
         self._rng = random.Random(seed) if seed is not None else random.Random()
 
@@ -136,6 +138,8 @@ class DebugStubPlayer:
     Usage:
         participants = {seat: DebugStubPlayer(seat) for seat in players}
     """
+
+    is_human = False  # AI player, uses LLM prompt format
 
     def __init__(self, seat: int, verbose: bool = True):
         self.seat = seat
@@ -294,3 +298,138 @@ class DebugStubPlayer:
 def create_debug_stub_player(seat: int, verbose: bool = True) -> DebugStubPlayer:
     """Create a debug stub player for a given seat."""
     return DebugStubPlayer(seat=seat, verbose=verbose)
+
+
+# ============================================================================
+# Capturing Stub Player - Captures prompts exactly as humans see them
+# ============================================================================
+
+
+class CapturingStubPlayer:
+    """A stub player that captures prompts exactly as humans receive them.
+
+    This is useful for running automated games and reviewing what human players
+    would see at each decision point. The handler builds human-format prompts
+    (using DecisionPrompt.to_tui_prompt()) when this player is used.
+
+    Usage:
+        participants = {seat: CapturingStubPlayer(seat) for seat in players}
+        # After game:
+        for call in participants[0].get_captured_calls():
+            print(call["user_prompt"])
+    """
+
+    is_human = True  # Signals handlers to build human-format prompts
+
+    def __init__(self, seat: int, seed: Optional[int] = None):
+        self.seat = seat
+        self._rng = random.Random(seed if seed is not None else 42 + seat)
+        self._calls: list[dict] = []
+
+    async def decide(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        hint: Optional[str] = None,
+        choices: Optional[Any] = None,
+    ) -> str:
+        """Capture prompts and return a valid response."""
+        # Capture exactly what human receives
+        self._calls.append({
+            "call_num": len(self._calls) + 1,
+            "seat": self.seat,
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "hint": hint,
+            "choices": self._serialize_choices(choices),
+        })
+
+        # Make valid response
+        response = self._choose_from_spec(choices) if choices else DEFAULT_SPEECH
+        self._calls[-1]["response"] = response
+        return response
+
+    def get_captured_calls(self) -> list[dict]:
+        """Return all captured decision data."""
+        return self._calls
+
+    def _serialize_choices(self, choices: Any) -> Optional[dict]:
+        """Serialize choices to dict for storage."""
+        if choices is None:
+            return None
+
+        result = {'options': [], 'allow_none': False}
+
+        # Handle ChoiceSpec objects
+        if hasattr(choices, 'options') and choices.options:
+            opts = choices.options
+            if hasattr(opts[0], 'value'):
+                # List of ChoiceOption objects
+                for opt in opts:
+                    result['options'].append({
+                        'value': str(opt.value),
+                        'display': str(opt.display),
+                        'seat_hint': opt.seat_hint,
+                    })
+            elif isinstance(opts[0], tuple):
+                # List of (display, value) tuples
+                for display, value in opts:
+                    result['options'].append({
+                        'value': str(value),
+                        'display': str(display),
+                    })
+            result['allow_none'] = getattr(choices, 'allow_none', False)
+            result['prompt'] = getattr(choices, 'prompt', '')
+            result['choice_type'] = str(getattr(choices, 'choice_type', ''))
+
+        # Handle list of tuples
+        elif isinstance(choices, list) and choices:
+            if isinstance(choices[0], tuple):
+                for display, value in choices:
+                    result['options'].append({
+                        'value': str(value),
+                        'display': str(display),
+                    })
+
+        # Handle dict
+        elif isinstance(choices, dict) and choices:
+            for key, value in choices.items():
+                result['options'].append({
+                    'value': str(value),
+                    'display': str(key),
+                })
+
+        return result if result['options'] else None
+
+    def _choose_from_spec(self, choices: Any) -> str:
+        """Pick a valid response from ChoiceSpec options."""
+        if hasattr(choices, 'options') and choices.options:
+            opts = choices.options
+            if hasattr(opts[0], 'value'):
+                values = [str(opt.value) for opt in opts]
+            elif isinstance(opts[0], tuple):
+                values = [str(v) for _, v in opts]
+            else:
+                values = [str(v) for v in opts]
+            if values:
+                return str(self._rng.choice(values))
+            if hasattr(choices, 'allow_none') and choices.allow_none:
+                return "-1"
+            raise ValueError("ChoiceSpec has no valid options")
+
+        if isinstance(choices, list) and choices:
+            if isinstance(choices[0], tuple):
+                values = [str(v) for _, v in choices]
+                return str(self._rng.choice(values))
+
+        if isinstance(choices, dict) and choices:
+            values = list(choices.values())
+            if values:
+                return str(self._rng.choice(values))
+
+        return DEFAULT_SPEECH
+
+
+def create_capturing_stub_player(seat: int, seed: Optional[int] = None) -> CapturingStubPlayer:
+    """Create a capturing stub player for a given seat."""
+    return CapturingStubPlayer(seat=seat, seed=seed)
