@@ -116,11 +116,18 @@ async def run_ai_simulation(
             if calls:
                 captured.extend(calls)
 
-        # Print summary of captured prompts
+        # Print summary of captured prompts grouped by seat
         console.print(f"\n[bold]Captured {len(captured)} decision calls:[/bold]")
+        last_seat = None
         for call in captured:
+            # Add clear separator between seats
+            if last_seat is not None and call['seat'] != last_seat:
+                console.print(f"\n[bold magenta]{'='*60}[/bold magenta]")
+                console.print(f"[bold magenta]  SEAT {call['seat']}[/bold magenta]")
+                console.print(f"[bold magenta]{'='*60}[/bold magenta]\n")
+            last_seat = call['seat']
+
             console.print(f"\n--- Call #{call['call_num']} | Seat {call['seat']} ---")
-            console.print(f"[cyan]Role:[/cyan] {call.get('role_reminder', 'N/A')}")
             console.print(f"[cyan]Situation:[/cyan]")
             console.print(call['user_prompt'][:500] if call['user_prompt'] else "(none)")
             if call.get('choices'):
