@@ -53,7 +53,7 @@ def validate_victory(
                 "message": "Villagers win when all Werewolves are dead, but game is not over",
                 "severity": "error",
             })
-        elif declared_winner is None:
+        elif declared_winner == "TIE":
             # This is a tie (A.5), not a violation of A.2
             pass
         elif declared_winner != "VILLAGER":
@@ -73,7 +73,7 @@ def validate_victory(
                 "message": "Werewolves win when all Ordinary Villagers are dead, but game is not over",
                 "severity": "error",
             })
-        elif declared_winner is None:
+        elif declared_winner == "TIE":
             # This is a tie (A.5), not a violation of A.3
             pass
         elif declared_winner != "WEREWOLF":
@@ -93,7 +93,7 @@ def validate_victory(
                 "message": "Werewolves win when all Gods are dead, but game is not over",
                 "severity": "error",
             })
-        elif declared_winner is None:
+        elif declared_winner == "TIE":
             # This is a tie (A.5), not a violation of A.4
             pass
         elif declared_winner != "WEREWOLF":
@@ -106,7 +106,7 @@ def validate_victory(
 
     # A.5: Tie when both conditions met simultaneously
     if not werewolves_alive and not villagers_alive:
-        if is_over and declared_winner is not None:
+        if is_over and declared_winner != "TIE":
             violations.append({
                 "rule_id": "A.5",
                 "category": "Victory Conditions",

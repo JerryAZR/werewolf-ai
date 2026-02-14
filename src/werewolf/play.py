@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import asyncio
+import logging
 import random
 import sys
 
@@ -228,6 +229,12 @@ def run_stress_test(
 
 def main():
     """Main entry point."""
+    # Configure logging
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(name)s: %(message)s",
+    )
+
     parser = argparse.ArgumentParser(
         description="Werewolf AI - A social deduction game",
         formatter_class=argparse.RawDescriptionHelpFormatter,

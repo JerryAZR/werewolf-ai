@@ -292,7 +292,7 @@ class TestIsGameOver:
 
         is_over, winner = state.is_game_over()
         assert is_over
-        assert winner is None  # TIE - both conditions met
+        assert winner == "TIE"  # TIE - both conditions met
 
     def test_tie_when_all_werewolves_and_gods_dead(self):
         """Test tie when all werewolves AND all gods dead (villagers alive).
@@ -311,7 +311,7 @@ class TestIsGameOver:
 
         is_over, winner = state.is_game_over()
         assert is_over
-        assert winner is None  # TIE - both conditions met
+        assert winner == "TIE"  # TIE - both conditions met
 
 
 class TestHelperMethods:
@@ -439,7 +439,7 @@ class TestEdgeCases:
 
         is_over, winner = state.is_game_over()
         assert is_over
-        assert winner is None  # TIE - both victory conditions met
+        assert winner == "TIE"  # TIE - both victory conditions met
 
     def test_only_werewolves_alive(self):
         """Test werewolf win when only werewolves remain."""
@@ -467,7 +467,7 @@ class TestEdgeCases:
 
         is_over, winner = state.is_game_over()
         assert is_over
-        assert winner is None  # TIE - both werewolves and villagers dead
+        assert winner == "TIE"  # TIE - both werewolves and villagers dead
 
     def test_apply_events_to_empty_state(self):
         """Test applying events to state with no players."""

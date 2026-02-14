@@ -779,8 +779,8 @@ class TestStressTestSmall:
 
         # Quick assertions - note: small sample may not have both winners
         assert len(winners) == num_games
-        # Winner can be None for ties (A.5)
-        assert all(w in ["WEREWOLF", "VILLAGER", None] for w in winners)
+        # Winner can be "TIE" for ties (A.5)
+        assert all(w in ["WEREWOLF", "VILLAGER", "TIE"] for w in winners)
 
         if in_game_violations:
             rule_ids = [v.rule_id for v in in_game_violations]

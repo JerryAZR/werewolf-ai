@@ -238,7 +238,7 @@ def validate_a5_tie_when_both_conditions_met(
                 severity=ValidationSeverity.ERROR,
                 context={"declared_winner": declared_winner, "is_over": is_over}
             ))
-        elif declared_winner is not None:
+        elif declared_winner != "TIE":
             violations.append(ValidationViolation(
                 rule_id="A.5",
                 category="Victory Conditions",

@@ -9,6 +9,7 @@ for:
 For banishment deaths, see BanishmentResolution handler.
 """
 
+import logging
 import random
 from typing import Optional, Sequence, Any
 from pydantic import BaseModel, Field
@@ -64,8 +65,23 @@ class DeathResolutionHandler:
     - Hunter shoot target must be living
     """
 
+    logger = logging.getLogger(__name__)
+
     # Maximum retry attempts for invalid input
     max_retries: int = 3
+
+    def __init__(self, rng: Optional[random.Random] = None):
+        """Initialize handler with optional RNG for reproducibility.
+
+        Args:
+            rng: Random number generator. If None, uses module-level random.
+        """
+        self._rng = rng
+
+    @property
+    def _random(self) -> random.Random:
+        """Get the RNG, falling back to module random if not set."""
+        return self._rng if self._rng is not None else random
 
     async def __call__(
         self,
@@ -242,8 +258,8 @@ class DeathResolutionHandler:
             # Validate response
             if response and len(response.strip()) >= 10:
                 return response.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(f"Last words generation failed for seat {seat}: {e}")
 
         # Fallback to template
         return self._generate_last_words_template(context, seat)
@@ -545,11 +561,14 @@ class DeathResolutionHandler:
         if werewolf_candidates:
             return min(werewolf_candidates)
 
-        # No obvious werewolves - 50% chance to skip
-        if random.random() < 0.5:
+        # No obvious werewolves - 50% chance to skip (uses seeded RNG if provided)
+        if self._random.random() < 0.5:
             return None
 
-        return min(living_candidates)
+        if living_candidates:
+            return min(living_candidates)
+
+        return None
 
     async def _get_badge_transfer(
         self,

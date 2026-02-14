@@ -7,6 +7,7 @@ Night order:
 4. Resolve deaths via NightActionResolver
 """
 
+import random
 from typing import Protocol, Optional, TYPE_CHECKING
 
 from werewolf.engine import (
@@ -67,19 +68,24 @@ class Participant(Protocol):
 class NightScheduler:
     """Orchestrates the night phase: Werewolf -> Witch -> Guard/Seer (parallel) -> Resolution."""
 
-    def __init__(self, validator: Optional["GameValidator"] = None):
+    def __init__(
+        self,
+        validator: Optional["GameValidator"] = None,
+        rng: Optional[random.Random] = None,
+    ):
         """Initialize the night scheduler with handlers.
 
         Args:
             validator: Optional validator for runtime rule checking.
                        Pass None or NoOpValidator for production (zero overhead).
+            rng: Optional RNG for reproducible games.
         """
         self._werewolf_handler = WerewolfHandler()
         self._witch_handler = WitchHandler()
         self._guard_handler = GuardHandler()
         self._seer_handler = SeerHandler()
         self._resolver = NightActionResolver()
-        self._death_handler = DeathResolutionHandler()
+        self._death_handler = DeathResolutionHandler(rng=rng)
         self._validator = validator
 
     async def run_night(

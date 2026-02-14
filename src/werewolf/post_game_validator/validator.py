@@ -511,7 +511,7 @@ class PostGameValidator:
                     "A.2", "Victory Conditions",
                     "Villagers win when all Werewolves are dead, but game is not over"
                 )
-            elif declared_winner is None:
+            elif declared_winner == "TIE":
                 # This is a tie (A.5), not a violation of A.2
                 pass
             elif declared_winner != "VILLAGER":
@@ -527,7 +527,7 @@ class PostGameValidator:
                     "A.3", "Victory Conditions",
                     "Werewolves win when all Ordinary Villagers are dead, but game is not over"
                 )
-            elif declared_winner is None:
+            elif declared_winner == "TIE":
                 # This is a tie (A.5), not a violation of A.3
                 pass
             elif declared_winner != "WEREWOLF":
@@ -543,7 +543,7 @@ class PostGameValidator:
                     "A.4", "Victory Conditions",
                     "Werewolves win when all Gods are dead, but game is not over"
                 )
-            elif declared_winner is None:
+            elif declared_winner == "TIE":
                 # This is a tie (A.5), not a violation of A.4
                 pass
             elif declared_winner != "WEREWOLF":

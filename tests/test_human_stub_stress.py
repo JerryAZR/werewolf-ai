@@ -65,8 +65,8 @@ async def test_1000_games_with_human_stub(game_seed: int):
     event_log, winner = await game.run()
 
     assert event_log is not None
-    # Winner can be None for ties (A.5 condition)
-    assert winner in ["WEREWOLF", "VILLAGER", None]
+    # Winner can be "TIE" for ties (A.5 condition)
+    assert winner in ["WEREWOLF", "VILLAGER", "TIE"]
     assert event_log.game_over is not None
 
 

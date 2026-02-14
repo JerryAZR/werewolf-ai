@@ -4,9 +4,12 @@ These AIs generate valid responses without calling LLMs.
 Useful for integration tests and development testing.
 """
 
+import logging
 import random
 import json
 from typing import Optional, Protocol, Any
+
+logger = logging.getLogger(__name__)
 
 
 class Participant(Protocol):
@@ -157,26 +160,26 @@ class DebugStubPlayer:
                 return self._choose_from_spec(choices)
             return DEFAULT_SPEECH
 
-        # Print comprehensive debug info
-        print(f"\n{'='*70}")
-        print(f"DEBUG STUB #{call_num} | Seat {self.seat}")
-        print(f"{'='*70}")
+        # Log comprehensive debug info
+        logger.debug(f"\n{'='*70}")
+        logger.debug(f"DEBUG STUB #{call_num} | Seat {self.seat}")
+        logger.debug(f"{'='*70}")
 
         # Parse and display phase info from user_prompt
         phase_info = self._extract_phase_info(user_prompt)
         if phase_info:
-            print(f"PHASE: {phase_info}")
+            logger.debug(f"PHASE: {phase_info}")
 
-        print(f"\n--- SYSTEM PROMPT ({len(system_prompt)} chars) ---")
-        print(system_prompt)
+        logger.debug(f"\n--- SYSTEM PROMPT ({len(system_prompt)} chars) ---")
+        logger.debug(system_prompt)
 
-        print(f"\n--- USER PROMPT ({len(user_prompt)} chars) ---")
+        logger.debug(f"\n--- USER PROMPT ({len(user_prompt)} chars) ---")
         # Show the full user prompt for debugging
-        print(user_prompt)
+        logger.debug(user_prompt)
 
         if hint:
-            print(f"\n--- HINT ---")
-            print(hint)
+            logger.debug(f"\n--- HINT ---")
+            logger.debug(hint)
 
         # Format and display choices
         choice_info = self._format_choices(choices)
@@ -185,11 +188,11 @@ class DebugStubPlayer:
             total_opts = len(choice_info['options'])
             if choice_info.get('allow_none'):
                 total_opts += 1
-            print(f"\n--- CHOICES ({total_opts} options) ---")
+            logger.debug(f"\n--- CHOICES ({total_opts} options) ---")
             for i, opt in enumerate(choice_info['options'], 1):
-                print(f"  {i}. [{opt['value']}] {opt['display']}")
+                logger.debug(f"  {i}. [{opt['value']}] {opt['display']}")
             if choice_info.get('allow_none'):
-                print(f"  {len(choice_info['options']) + 1}. [skip/none] Skip/Pass")
+                logger.debug(f"  {len(choice_info['options']) + 1}. [skip/none] Skip/Pass")
 
         # Make deterministic choice
         if choices is not None:
@@ -197,8 +200,8 @@ class DebugStubPlayer:
         else:
             response = DEFAULT_SPEECH
 
-        print(f"\n>>> RESPONSE: {response}")
-        print(f"{'='*70}\n")
+        logger.debug(f"\n>>> RESPONSE: {response}")
+        logger.debug(f"{'='*70}\n")
 
         return response
 

@@ -308,7 +308,7 @@ class VictoryOutcome(GameEvent):
     """Victory condition check."""
 
     is_game_over: bool = False
-    winner: Optional[str] = None  # "WEREWOLF" or "VILLAGER"
+    winner: Optional[str] = None  # "WEREWOLF", "VILLAGER", or "TIE"
     condition: Optional[VictoryCondition] = None
 
     def __str__(self) -> str:
@@ -321,11 +321,11 @@ class GameOver(GameEvent):
     """Game has ended."""
 
     phase: Phase = Phase.GAME_OVER
-    winner: Optional[str] = None  # "WEREWOLF", "VILLAGER", or None for tie
+    winner: Optional[str] = None  # "WEREWOLF", "VILLAGER", or "TIE"
     condition: VictoryCondition
     final_turn_count: int
 
     def __str__(self) -> str:
-        if self.winner is None:
+        if self.winner == "TIE":
             return f"GameOver(TIE by {self.condition.value}, turns={self.final_turn_count})"
         return f"GameOver({self.winner} wins by {self.condition.value}, turns={self.final_turn_count})"

@@ -1,5 +1,6 @@
 """WerewolfGame - main game controller that orchestrates the complete game loop."""
 
+import random
 from typing import Optional, Protocol, TYPE_CHECKING
 
 from werewolf.engine import (
@@ -62,6 +63,9 @@ class WerewolfGame:
         self._seed = seed
         self._validator = validator
 
+        # Initialize RNG for reproducibility (used by handlers)
+        self._rng = random.Random(seed) if seed is not None else None
+
         # Initialize game state
         self._state = GameState(
             players=players,
@@ -77,9 +81,9 @@ class WerewolfGame:
         # Initialize event collector
         self._collector = EventCollector(day=1)
 
-        # Initialize schedulers with optional validator
-        self._night_scheduler = NightScheduler(validator=validator)
-        self._day_scheduler = DayScheduler(validator=validator)
+        # Initialize schedulers with optional validator and RNG
+        self._night_scheduler = NightScheduler(validator=validator, rng=self._rng)
+        self._day_scheduler = DayScheduler(validator=validator, rng=self._rng)
 
     async def run(self) -> tuple[GameEventLog, Optional[str]]:
         """Run complete game until victory.
@@ -142,6 +146,9 @@ class WerewolfGame:
             # Check if game ended (banishment or werewolves killed)
             is_over, winner = self._state.is_game_over()
             if is_over:
+                # Handle tie case: when both victory conditions are met, is_game_over returns None
+                if winner is None:
+                    winner = "TIE"
                 break
 
         # If we hit max days, force a winner based on current state
@@ -163,19 +170,15 @@ class WerewolfGame:
 
                 if villagers_win and werewolves_win:
                     # Tie - both conditions met
-                    winner = None
+                    winner = "TIE"
                 elif werewolves_alive and (not gods_alive or not villagers_alive):
                     winner = "WEREWOLF"
                 elif not werewolves_alive:
                     winner = "VILLAGER"
                 else:
-                    # BUG: This returns None when all three groups (werewolves, gods, villagers)
-                    # are still alive after MAX_GAME_DAYS. This causes flaky test failures in
-                    # TestWerewolfGameHumanPlayerStub::test_complete_game_with_human_player_at_seat_0
-                    # (~1.2% failure rate). The game should not end in a None state.
-                    # TODO: Fix this to properly handle the case when game ends due to max days
-                    # with no victory condition met (should determine winner by majority or tie).
-                    winner = None
+                    # All three groups (werewolves, gods, villagers) still alive after MAX_GAME_DAYS.
+                    # Declare tie - no team has achieved victory.
+                    winner = "TIE"
 
         # Create GameOver event
         game_over = self._create_game_over(winner)

@@ -1,5 +1,6 @@
 """DayScheduler - orchestrates the day phase of the Werewolf game."""
 
+import random
 from typing import Protocol, Sequence, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field
 
@@ -34,14 +35,20 @@ class Participant(Protocol):
 class DayScheduler:
     """Orchestrates the day phase: Nomination -> Campaign -> OptOut -> SheriffElection -> DeathResolution -> Discussion -> Voting -> VictoryCheck"""
 
-    def __init__(self, validator: Optional["GameValidator"] = None):
+    def __init__(
+        self,
+        validator: Optional["GameValidator"] = None,
+        rng: Optional[random.Random] = None,
+    ):
         """Initialize the DayScheduler.
 
         Args:
             validator: Optional validator for runtime rule checking.
                        Pass None or NoOpValidator for production (zero overhead).
+            rng: Optional RNG for reproducible games.
         """
         self._validator = validator
+        self._rng = rng
 
     async def run_day(
         self,
@@ -382,7 +389,7 @@ class DayScheduler:
         """
         from werewolf.handlers.death_resolution_handler import DeathResolutionHandler, HandlerResult
         from werewolf.events import SubPhase
-        handler = DeathResolutionHandler()
+        handler = DeathResolutionHandler(rng=self._rng)
         context = self._build_context(state)
         # Use deaths from NightOutcome (passed from WerewolfGame)
         night_outcome = DeathResolutionNightOutcome(
@@ -435,7 +442,7 @@ class DayScheduler:
     ) -> "HandlerResult":
         """Run BanishmentResolution subphase."""
         from werewolf.handlers.banishment_resolution_handler import BanishmentResolutionHandler, HandlerResult, BanishmentInput
-        handler = BanishmentResolutionHandler()
+        handler = BanishmentResolutionHandler(rng=self._rng)
         banishment_input = BanishmentInput(
             day=state.day,
             banished=banished_seat,

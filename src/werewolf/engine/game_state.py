@@ -75,7 +75,7 @@ class GameState(BaseModel):
         """Check if the game has ended and return the winner.
 
         Returns:
-            tuple: (is_game_over, winner) where winner is "VILLAGER", "WEREWOLF", or None for tie
+            tuple: (is_game_over, winner) where winner is "VILLAGER", "WEREWOLF", "TIE", or None if game not over
         """
         werewolf_count = self.get_role_count(Role.WEREWOLF)
         god_count = self.get_god_count()
@@ -99,7 +99,7 @@ class GameState(BaseModel):
 
         # A.5: Tie when BOTH conditions are met simultaneously
         if villager_condition_met and werewolf_condition_met:
-            return True, None
+            return True, "TIE"
 
         # Normal victory conditions
         if werewolf_condition_met:
