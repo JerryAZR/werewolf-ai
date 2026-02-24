@@ -8,9 +8,9 @@ Runs multiple complete games with CollectingValidator and PostGameValidator to s
 - No crashes or validation violations from either validator
 
 Usage:
-    uv run pytest tests/test_stress_test.py -v --tb=short
-    uv run pytest tests/test_stress_test.py::TestStressTest::test_50_parallel_games -v --tb=short
-    uv run pytest tests/test_stress_test.py::TestStressTest::test_2000_parallel_games -v --tb=short -k "2000"
+    uv run pytest tests/test_stress_test.py::TestStressTest::test_stress_10 -v --tb=short
+    uv run pytest tests/test_stress_test.py::TestStressTest::test_stress_50 -v --tb=short
+    uv run pytest tests/test_stress_test.py::TestStressTest::test_stress_2000 -v --tb=short
 """
 
 import asyncio
@@ -202,20 +202,27 @@ def standard_players() -> dict[int, Player]:
 # Stress Tests
 # ============================================================================
 
+
 class TestStressTest:
     """Parallel stress tests with in-game validators."""
 
     @pytest.mark.asyncio
-    async def test_50_parallel_games(self, standard_players: dict[int, Player]):
-        """Run 50 complete games in parallel with validators.
+    async def test_stress_10(self, standard_players: dict[int, Player]):
+        """Quick stress test with 10 games for fast feedback."""
+        await self._run_stress_test(standard_players, num_games=10)
 
-        This stress test verifies:
-        - Game engine stability
-        - No validation violations
-        - Winner distribution (should be roughly 50/50)
-        - Victory condition diversity
-        """
-        num_games = 50
+    @pytest.mark.asyncio
+    async def test_stress_50(self, standard_players: dict[int, Player]):
+        """Standard stress test with 50 games."""
+        await self._run_stress_test(standard_players, num_games=50)
+
+    @pytest.mark.asyncio
+    async def test_stress_2000(self, standard_players: dict[int, Player]):
+        """Large-scale stress test with 2000 games."""
+        await self._run_stress_test(standard_players, num_games=2000)
+
+    async def _run_stress_test(self, standard_players: dict[int, Player], num_games: int):
+        """Helper method to run stress test with configurable number of games."""
         seed_base = random.randint(1, 1000000)
 
         # Run all games in parallel
