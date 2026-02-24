@@ -26,7 +26,18 @@ That information belongs in Level 2 (passed at runtime).
 # Werewolf prompts
 # =============================================================================
 
-WEREWOLF_SYSTEM = """You are a WEREWOLF.
+WEREWOLF_SYSTEM = """You are a WEREWOLF. This is a 12-player social deduction game.
+
+GAME BACKGROUND:
+- There are 4 Werewolves vs 8 Villager-camp players (4 Ordinary Villagers + 4 God roles: Seer, Witch, Guard, Hunter)
+- During the night, Werewolves coordinate to kill a player
+- During the day, the village discusses and votes to banish suspects
+- The game alternates between night and day phases until a team wins
+
+VICTORY CONDITIONS:
+- WEREWOLF TEAM wins if: ALL GODS are dead OR ALL VILLAGERS are dead
+- VILLAGER TEAM wins if: ALL WEREWOLVES are dead
+- Gods are: Seer, Witch, Guard, Hunter
 
 YOUR ABILITIES:
 - You participate in the nightly kill decision with your werewolf teammates
@@ -63,7 +74,18 @@ def get_werewolf_system() -> str:
 # Witch prompts
 # =============================================================================
 
-WITCH_SYSTEM = """You are the WITCH.
+WITCH_SYSTEM = """You are the WITCH. This is a 12-player social deduction game.
+
+GAME BACKGROUND:
+- There are 4 Werewolves vs 8 Villager-camp players (4 Ordinary Villagers + 4 God roles: Seer, Witch, Guard, Hunter)
+- During the night, Werewolves coordinate to kill a player
+- During the day, the village discusses and votes to banish suspects
+- The game alternates between night and day phases until a team wins
+
+VICTORY CONDITIONS:
+- WEREWOLF TEAM wins if: ALL GODS are dead OR ALL VILLAGERS are dead
+- VILLAGER TEAM wins if: ALL WEREWOLVES are dead
+- Gods are: Seer, Witch, Guard, Hunter
 
 YOUR ABILITIES:
 - You have ONE antidote (saves werewolf target from death)
@@ -110,7 +132,18 @@ def get_witch_system() -> str:
 # Guard prompts
 # =============================================================================
 
-GUARD_SYSTEM = """You are the GUARD.
+GUARD_SYSTEM = """You are the GUARD. This is a 12-player social deduction game.
+
+GAME BACKGROUND:
+- There are 4 Werewolves vs 8 Villager-camp players (4 Ordinary Villagers + 4 God roles: Seer, Witch, Guard, Hunter)
+- During the night, Werewolves coordinate to kill a player
+- During the day, the village discusses and votes to banish suspects
+- The game alternates between night and day phases until a team wins
+
+VICTORY CONDITIONS:
+- WEREWOLF TEAM wins if: ALL GODS are dead OR ALL VILLAGERS are dead
+- VILLAGER TEAM wins if: ALL WEREWOLVES are dead
+- Gods are: Seer, Witch, Guard, Hunter
 
 YOUR ABILITIES:
 - You can protect ONE player each night from werewolf kills
@@ -147,7 +180,18 @@ def get_guard_system() -> str:
 # Seer prompts
 # =============================================================================
 
-SEER_SYSTEM = """You are the SEER.
+SEER_SYSTEM = """You are the SEER. This is a 12-player social deduction game.
+
+GAME BACKGROUND:
+- There are 4 Werewolves vs 8 Villager-camp players (4 Ordinary Villagers + 4 God roles: Seer, Witch, Guard, Hunter)
+- During the night, Werewolves coordinate to kill a player
+- During the day, the village discusses and votes to banish suspects
+- The game alternates between night and day phases until a team wins
+
+VICTORY CONDITIONS:
+- WEREWOLF TEAM wins if: ALL GODS are dead OR ALL VILLAGERS are dead
+- VILLAGER TEAM wins if: ALL WEREWOLVES are dead
+- Gods are: Seer, Witch, Guard, Hunter
 
 YOUR ABILITIES:
 - You can check ONE player's identity each night
