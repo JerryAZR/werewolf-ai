@@ -1,7 +1,7 @@
 """WerewolfGame - main game controller that orchestrates the complete game loop."""
 
 import random
-from typing import Optional, Protocol, TYPE_CHECKING
+from typing import Callable, Optional, Protocol, TYPE_CHECKING
 
 from werewolf.engine import (
     GameState,
@@ -12,6 +12,7 @@ from werewolf.engine import (
 )
 from werewolf.models import Player
 from werewolf.events import (
+    GameEvent,
     GameEventLog,
     GameStart,
     GameOver,
@@ -46,6 +47,7 @@ class WerewolfGame:
         participants: dict[int, Participant],
         seed: Optional[int] = None,
         validator: Optional["GameValidator"] = None,
+        event_callback: Optional[Callable[["GameEvent"], None]] = None,
     ):
         """Initialize the WerewolfGame.
 
@@ -57,6 +59,8 @@ class WerewolfGame:
                   natural randomness. Same seed + same participants = identical game.
             validator: Optional validator for runtime rule checking.
                        Pass None or NoOpValidator for production (zero overhead).
+            event_callback: Optional callback fired after each event is added.
+                           Callback receives the GameEvent as argument.
         """
         self.players = players
         self.participants = participants
@@ -78,8 +82,8 @@ class WerewolfGame:
         # Initialize night action store for first night
         self._night_actions = NightActionStore()
 
-        # Initialize event collector
-        self._collector = EventCollector(day=1)
+        # Initialize event collector with optional callback
+        self._collector = EventCollector(day=1, on_event=event_callback)
 
         # Initialize schedulers with optional validator and RNG
         self._night_scheduler = NightScheduler(validator=validator, rng=self._rng)

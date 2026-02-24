@@ -1,5 +1,7 @@
 """EventCollector - accumulates events from handlers into unified event log."""
 
+from typing import Callable, Optional
+
 from werewolf.events import (
     GameEvent,
     SubPhaseLog,
@@ -25,13 +27,22 @@ class EventCollector:
         collector.add_event(werewolf_kill)
         collector.add_event(witch_action)
         event_log = collector.get_event_log()
+
+    The collector supports an optional callback that fires after each event:
+        collector = EventCollector(day=1, on_event=my_callback)
     """
 
-    def __init__(self, day: int = 0):
+    def __init__(
+        self,
+        day: int = 0,
+        on_event: Optional[Callable[[GameEvent], None]] = None,
+    ):
         """Initialize the EventCollector.
 
         Args:
             day: Current day number (defaults to 0 before game starts).
+            on_event: Optional callback fired after each event is added.
+                       Callback receives the GameEvent as argument.
         """
         self._day = day
         self._event_log = GameEventLog(player_count=0)  # Will be set when game starts
@@ -39,6 +50,7 @@ class EventCollector:
         self._current_phase_log: PhaseLog | None = None
         self._current_subphase: SubPhase | None = None
         self._current_subphase_log: SubPhaseLog | None = None
+        self._on_event = on_event
 
     @property
     def day(self) -> int:
@@ -135,6 +147,10 @@ class EventCollector:
         if self._current_subphase_log is not None:
             self._current_subphase_log.events.append(event)
 
+        # Fire callback if registered
+        if self._on_event is not None:
+            self._on_event(event)
+
     def add_subphase_log(self, log: SubPhaseLog) -> None:
         """Merge a complete SubPhaseLog into the current phase.
 
@@ -151,6 +167,10 @@ class EventCollector:
         for event in log.events:
             if event.day == 0:
                 event.day = self._day
+
+            # Fire callback for each event in the subphase log
+            if self._on_event is not None:
+                self._on_event(event)
 
         # Add the subphase log to current phase
         self._current_phase_log.subphases.append(log)

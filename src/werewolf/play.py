@@ -13,6 +13,7 @@ import asyncio
 import logging
 import random
 import sys
+from typing import Optional
 
 # Enable Windows console colors
 if sys.platform == "win32":
@@ -49,11 +50,81 @@ def create_players(seed: int) -> dict[int, Player]:
     return players
 
 
+# Event callback for real-time display
+_event_queue: asyncio.Queue = asyncio.Queue()
+_display_task: Optional[asyncio.Task] = None
+_display_delay: float = 0.0
+
+
+def _create_event_callback(delay: float = 0.0):
+    """Create an event callback that queues events for display.
+
+    Args:
+        delay: Delay in seconds between events (for watching mode)
+
+    Returns:
+        Callback function to pass to WerewolfGame
+    """
+    global _display_delay
+    _display_delay = delay
+
+    def callback(event):
+        # Queue event for display
+        _event_queue.put_nowait(event)
+
+    return callback
+
+
+async def _display_events_task(console: Console, roles_secret: dict[int, str], stop_event: asyncio.Event):
+    """Background task that displays events from queue.
+
+    Args:
+        console: Rich console for output
+        roles_secret: Mapping of seat to role for formatting
+        stop_event: Event to signal when to stop
+    """
+    from werewolf.events.event_formatter import EventFormatter
+
+    formatter = EventFormatter(roles_secret)
+
+    while True:
+        # Check stop event first - if set, drain queue then exit
+        if stop_event.is_set():
+            # Drain remaining events before exiting
+            while not _event_queue.empty():
+                try:
+                    event = _event_queue.get_nowait()
+                    formatted = formatter.format(event)
+                    console.print(formatted)
+                except asyncio.QueueEmpty:
+                    break
+            break
+
+        try:
+            # Wait for event with timeout to check stop_event
+            event = await asyncio.wait_for(_event_queue.get(), timeout=0.1)
+
+            # Format and print event
+            formatted = formatter.format(event)
+            if formatted.strip():  # Only print non-empty formatted events
+                console.print(formatted)
+
+            # Add delay between events if configured
+            if _display_delay > 0:
+                await asyncio.sleep(_display_delay)
+
+        except asyncio.TimeoutError:
+            # No event yet, continue waiting
+            continue
+
+
 async def run_ai_simulation(
     seed: int,
     validator: GameValidator | None = None,
     log_file: str | None = "game_log.txt",
     capture: bool = False,
+    watch_mode: bool = False,
+    delay: float = 0.0,
 ) -> tuple[str, list[dict] | None]:
     """Run a game with all AI players (for spectators).
 
@@ -62,14 +133,34 @@ async def run_ai_simulation(
         validator: Optional game validator
         log_file: File to save event log (None to disable)
         capture: If True, use CapturingStubPlayer to capture prompts
+        watch_mode: If True, display events in real-time
+        delay: Delay in seconds between events (for watch mode)
 
     Returns:
         Tuple of (winner string, captured prompts list or None)
     """
     console = Console()
-    console.print(f"\n[bold]Running AI simulation (seed {seed})...[/bold]\n")
 
     players = create_players(seed)
+
+    # Build role secret for event formatter
+    roles_secret = {seat: player.role.value for seat, player in players.items()}
+
+    # Set up display task for watch mode
+    display_task = None
+    stop_event = None
+    event_callback = None
+
+    if watch_mode:
+        console.print(f"\n[bold cyan]Watching AI simulation (seed {seed})...[/bold cyan]\n")
+        console.print(f"[dim]Delay between events: {delay}s[/dim]\n")
+        event_callback = _create_event_callback(delay)
+        stop_event = asyncio.Event()
+        display_task = asyncio.create_task(
+            _display_events_task(console, roles_secret, stop_event)
+        )
+    else:
+        console.print(f"\n[bold]Running AI simulation (seed {seed})...[/bold]\n")
 
     # Create participants - use capturing stubs if requested
     if capture:
@@ -88,9 +179,17 @@ async def run_ai_simulation(
         participants=participants,
         seed=seed,
         validator=validator,
+        event_callback=event_callback,
     )
 
     event_log, winner = await game.run()
+
+    # Stop display task if running
+    if display_task is not None:
+        # Stop display task - give a moment for events to queue, then signal stop
+        stop_event.set()
+        if display_task is not None:
+            await display_task
 
     console.print(Panel(
         f"[bold]Game Over[/bold]\n\n"
@@ -286,7 +385,13 @@ def main():
     parser.add_argument(
         "--watch",
         action="store_true",
-        help="Watch AI vs AI simulation (no human player)"
+        help="Watch AI vs AI simulation with real-time event display"
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.0,
+        help="Delay in seconds between events when using --watch (default: 0)"
     )
     parser.add_argument(
         "--validate",
@@ -338,7 +443,16 @@ def main():
         run_stress_test(args.games, seed_base=args.seed)
     elif args.ai or args.watch:
         # AI vs AI mode (explicit --ai or --watch flag)
-        asyncio.run(run_ai_simulation(args.seed, validator=validator, log_file=args.log_file, capture=args.capture))
+        # --watch enables real-time display, --ai runs silently
+        watch_mode = args.watch
+        asyncio.run(run_ai_simulation(
+            args.seed,
+            validator=validator,
+            log_file=args.log_file,
+            capture=args.capture,
+            watch_mode=watch_mode,
+            delay=args.delay,
+        ))
     else:
         # Default: single human player with Textual UI
         random_seat = random.randint(0, 11)
