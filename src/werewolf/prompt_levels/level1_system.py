@@ -41,7 +41,13 @@ RULES:
 
 RESPONSE FORMAT:
 Enter a seat number to kill, or SKIP to skip.
-Example: "7" means kill player at seat 7. "SKIP" means skip."""
+Example: "7" means kill player at seat 7. "SKIP" means skip.
+
+IMPORTANT: After your reasoning, wrap your final answer in XML tags:
+<answer>YOUR CHOICE</answer>
+
+Example: <answer>3</answer>
+Example: <answer>SKIP</answer>"""
 
 
 def get_werewolf_system() -> str:
@@ -81,7 +87,14 @@ RESPONSE FORMAT:
 - "PASS" - Do nothing this night
 - "ANTIDOTE <seat>" - Save the werewolf kill target
 - "POISON <seat>" - Poison a player
-Example: "PASS" or "ANTIDOTE 7" or "POISON 3"""
+Example: "PASS" or "ANTIDOTE 7" or "POISON 3"
+
+IMPORTANT: After your reasoning, wrap your final answer in XML tags:
+<answer>YOUR CHOICE</answer>
+
+Example: <answer>PASS</answer>
+Example: <answer>ANTIDOTE 7</answer>
+Example: <answer>POISON 3</answer>"""
 
 
 def get_witch_system() -> str:
@@ -112,7 +125,13 @@ RULES:
 
 RESPONSE FORMAT:
 Enter a seat number to protect, or "SKIP".
-Example: "7" means protect player at seat 7. "SKIP" means protect no one."""
+Example: "7" means protect player at seat 7. "SKIP" means protect no one.
+
+IMPORTANT: After your reasoning, wrap your final answer in XML tags:
+<answer>YOUR CHOICE</answer>
+
+Example: <answer>3</answer>
+Example: <answer>SKIP</answer>"""
 
 
 def get_guard_system() -> str:
@@ -142,7 +161,12 @@ RULES:
 
 RESPONSE FORMAT:
 Enter the seat number of the player to check.
-Example: "7" means check player at seat 7."""
+Example: "7" means check player at seat 7.
+
+IMPORTANT: After your reasoning, wrap your final answer in XML tags:
+<answer>YOUR CHOICE</answer>
+
+Example: <answer>3</answer>"""
 
 
 def get_seer_system() -> str:
@@ -274,7 +298,12 @@ VOTING RULES:
 
 RESPONSE FORMAT:
 Enter the seat number of your chosen candidate.
-Example: "7" means vote for player at seat 7."""
+Example: "7" means vote for player at seat 7.
+
+IMPORTANT: After your reasoning, wrap your final answer in XML tags:
+<answer>YOUR CHOICE</answer>
+
+Example: <answer>3</answer>"""
 
 
 def get_sheriff_election_system() -> str:
@@ -342,7 +371,13 @@ VOTING RULES:
 RESPONSE FORMAT:
 - Enter a seat number to banish that player
 - "None" or "abstain" to not vote for anyone
-Example: "7" or "None"."""
+Example: "7" or "None".
+
+IMPORTANT: After your reasoning, wrap your final answer in XML tags:
+<answer>YOUR CHOICE</answer>
+
+Example: <answer>3</answer>
+Example: <answer>None</answer>"""
 
 
 def get_voting_system() -> str:

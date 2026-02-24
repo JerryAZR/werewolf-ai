@@ -23,6 +23,7 @@ from werewolf.prompt_levels import (
     build_seer_decision,
 )
 from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant, MaxRetriesExceededError
+from werewolf.handlers.parsing import extract_answer
 
 
 def _get_choice_spec_helpers():
@@ -368,7 +369,9 @@ class SeerHandler:
         Raises:
             ValueError: If response cannot be parsed as a valid seat number
         """
-        cleaned = raw_response.strip()
+        # Extract answer from wrapper/prefix
+        extracted = extract_answer(raw_response)
+        cleaned = extracted
 
         # Parse seat number
         match = re.match(r'^(\d+)$', cleaned)

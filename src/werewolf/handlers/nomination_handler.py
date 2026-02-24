@@ -22,6 +22,7 @@ from werewolf.prompt_levels import (
     build_nomination_decision,
 )
 from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant, MaxRetriesExceededError
+from werewolf.handlers.parsing import extract_answer
 
 
 
@@ -250,7 +251,9 @@ class NominationHandler:
             True if "run", False if "not running", None if invalid
         """
         try:
-            cleaned = raw_response.strip().lower()
+            # Extract answer from wrapper/prefix
+            extracted = extract_answer(raw_response)
+            cleaned = extracted.lower()
 
             if cleaned == "run":
                 return True

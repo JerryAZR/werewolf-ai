@@ -24,6 +24,7 @@ from werewolf.prompt_levels import (
     DecisionPrompt,
 )
 from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant, MaxRetriesExceededError
+from werewolf.handlers.parsing import extract_answer
 
 
 def _get_choice_spec_helpers():
@@ -312,8 +313,10 @@ class WerewolfHandler:
         Raises:
             ValueError: If response cannot be parsed
         """
+        # Extract answer from wrapper/prefix
+        extracted = extract_answer(raw_response)
         # Clean up the response
-        cleaned = raw_response.strip().lower()
+        cleaned = extracted.lower()
 
         # Handle skip explicitly
         if cleaned in ['-1', 'skip', 'none', 'no kill', 'pass']:

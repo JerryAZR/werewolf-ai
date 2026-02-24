@@ -38,6 +38,7 @@ from werewolf.prompt_levels import (
     build_death_badge_transfer_decision,
 )
 from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant
+from werewolf.handlers.parsing import extract_answer
 
 
 # ============================================================================
@@ -520,7 +521,9 @@ class DeathResolutionHandler:
             - int: Target seat to shoot
             - 'RETRY': Response was invalid, need to retry
         """
-        response = response.strip()
+        # Extract answer from wrapper/prefix
+        extracted = extract_answer(response)
+        response = extracted
 
         # Handle SKIP variants
         if response.upper() in ("SKIP", "NONE", "-1", "PASS"):
@@ -714,7 +717,9 @@ class DeathResolutionHandler:
             - int: Valid heir seat
             - 'RETRY': Response was invalid, need to retry
         """
-        response = response.strip()
+        # Extract answer from wrapper/prefix
+        extracted = extract_answer(response)
+        response = extracted
 
         # Handle SKIP variants
         if response.upper() in ("SKIP", "NONE", "-1", "PASS"):

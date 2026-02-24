@@ -8,6 +8,9 @@ from werewolf.handlers.base import (
     MaxRetriesExceededError,
 )
 
+# Re-export parsing utilities
+from .parsing import extract_answer
+
 # Import handlers
 from .werewolf_handler import (
     PhaseContext,
@@ -44,6 +47,8 @@ __all__ = [
     "SubPhaseLog",
     "Participant",
     "MaxRetriesExceededError",
+    # Parsing utilities
+    "extract_answer",
     # Werewolf handler
     "PhaseContext",
     "WerewolfHandler",

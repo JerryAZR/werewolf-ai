@@ -22,6 +22,7 @@ from werewolf.prompt_levels import (
     build_sheriff_election_decision,
 )
 from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant, MaxRetriesExceededError
+from werewolf.handlers.parsing import extract_answer
 
 
 SHERIFF_VOTE_WEIGHT: float = 1.5
@@ -340,7 +341,9 @@ class SheriffElectionHandler:
             Voted seat number, or None if abstaining/invalid
         """
         try:
-            cleaned = raw_response.strip().lower()
+            # Extract answer from wrapper/prefix
+            extracted = extract_answer(raw_response)
+            cleaned = extracted.lower()
 
             # Allow abstention
             if cleaned in ('none', 'abstain', 'skip', 'pass', ''):

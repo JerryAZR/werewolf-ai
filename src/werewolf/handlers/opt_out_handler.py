@@ -22,6 +22,7 @@ from werewolf.prompt_levels import (
     build_opt_out_decision,
 )
 from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant, MaxRetriesExceededError
+from werewolf.handlers.parsing import extract_answer
 
 
 # ============================================================================
@@ -267,7 +268,9 @@ class OptOutHandler:
         Returns:
             True if opting out, False if staying, None if invalid
         """
-        cleaned = raw_response.strip().lower()
+        # Extract answer from wrapper/prefix
+        extracted = extract_answer(raw_response)
+        cleaned = extracted.lower()
 
         if cleaned == "opt out":
             return True

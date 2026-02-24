@@ -22,6 +22,7 @@ from werewolf.prompt_levels import (
     build_witch_decision,
 )
 from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant, MaxRetriesExceededError
+from werewolf.handlers.parsing import extract_answer
 
 # Lazy import for ChoiceSpec to avoid circular imports
 def _get_choice_spec():
@@ -379,7 +380,9 @@ class WitchHandler:
         Raises:
             ValueError: If response cannot be parsed
         """
-        cleaned = raw_response.strip().upper()
+        # Extract answer from wrapper/prefix
+        extracted = extract_answer(raw_response)
+        cleaned = extracted.upper()
 
         # Parse PASS
         if cleaned == "PASS":

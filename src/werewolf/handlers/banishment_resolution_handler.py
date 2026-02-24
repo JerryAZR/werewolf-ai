@@ -36,6 +36,7 @@ from werewolf.prompt_levels import (
     build_banishment_badge_transfer_decision,
 )
 from werewolf.handlers.base import SubPhaseLog, HandlerResult, Participant
+from werewolf.handlers.parsing import extract_answer
 
 
 # ============================================================================
@@ -472,7 +473,9 @@ class BanishmentResolutionHandler:
             - int: Target seat to shoot
             - 'RETRY': Response was invalid, need to retry
         """
-        response = response.strip()
+        # Extract answer from wrapper/prefix
+        extracted = extract_answer(response)
+        response = extracted
 
         if response.upper() in ("SKIP", "NONE", "-1", "PASS"):
             return None  # Explicit skip
@@ -658,7 +661,9 @@ class BanishmentResolutionHandler:
             - int: Target seat for badge transfer
             - 'RETRY': Response was invalid, need to retry
         """
-        response = response.strip()
+        # Extract answer from wrapper/prefix
+        extracted = extract_answer(response)
+        response = extracted
 
         if response.upper() in ("SKIP", "NONE", "-1", "PASS"):
             return None  # Explicit skip
