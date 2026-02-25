@@ -11,10 +11,27 @@ from textual.binding import Binding
 from textual.message import Message
 
 import asyncio
-from typing import Optional
+from typing import Optional, Callable, Any
 
 # Import for role descriptions
 from enum import Enum
+
+# Import for event formatting
+from werewolf.events.event_formatter import EventFormatter
+from werewolf.events.game_events import (
+    GameEvent,
+    DeathEvent,
+    Speech,
+    DeathAnnouncement,
+    SheriffOutcome,
+    SheriffNomination,
+    SheriffOptOut,
+    Vote,
+    Banishment,
+    GameStart,
+    GameOver,
+    VictoryOutcome,
+)
 
 # Short role reminders for human players
 ROLE_REMINDERS = {
@@ -135,6 +152,118 @@ class WerewolfUI(App):
         Binding("escape", "quit_with_confirm", "Quit", show=False),
     ]
 
+    # ========================================================================
+    # Event Display Infrastructure
+    # ========================================================================
+
+    def _create_event_callback(self) -> Callable[[GameEvent], None]:
+        """Create an event callback that queues events for display.
+
+        Returns:
+            Callback function to pass to WerewolfGame
+        """
+        def callback(event: GameEvent) -> None:
+            # Queue event for display (non-blocking)
+            self._event_queue.put_nowait(event)
+
+        return callback
+
+    def _is_event_public(self, event: GameEvent) -> bool:
+        """Check if an event should be shown to human players (public only).
+
+        Public events:
+        - DeathEvent: deaths with last words
+        - Speech: previous speeches (not own)
+        - DeathAnnouncement: who died during night
+        - SheriffOutcome: sheriff election winner
+        - SheriffNomination: who ran for sheriff
+        - SheriffOptOut: who dropped out
+        - Vote: voting results (after voting ends)
+        - Banishment: banishment results
+        - GameStart, GameOver, VictoryOutcome
+        """
+        # Always show game lifecycle events
+        if isinstance(event, (GameStart, GameOver, VictoryOutcome)):
+            return True
+
+        # Show death announcements (who died)
+        if isinstance(event, DeathAnnouncement):
+            return True
+
+        # Show deaths with last words
+        if isinstance(event, DeathEvent):
+            return True
+
+        # Show speeches
+        if isinstance(event, Speech):
+            return True
+
+        # Show sheriff-related events
+        if isinstance(event, (SheriffNomination, SheriffOptOut, SheriffOutcome)):
+            return True
+
+        # Show votes (after voting ends - we show all votes)
+        if isinstance(event, Vote):
+            return True
+
+        # Show banishment
+        if isinstance(event, Banishment):
+            return True
+
+        # Hide secret night actions
+        # WerewolfKill, WitchAction, SeerAction, GuardAction, NightOutcome
+        return False
+
+    async def _display_events_task(self) -> None:
+        """Background task that displays public events from queue.
+
+        Filters events to only show public information to the human player.
+        """
+        formatter = EventFormatter(self._roles_secret)
+
+        while True:
+            # Check stop event first
+            if self._stop_event.is_set():
+                # Drain remaining events before exiting
+                while not self._event_queue.empty():
+                    try:
+                        event = self._event_queue.get_nowait()
+                        if self._is_event_public(event):
+                            formatted = formatter.format(event)
+                            if formatted.strip():
+                                self._write(formatted)
+                    except asyncio.QueueEmpty:
+                        break
+                break
+
+            try:
+                # Wait for event with timeout to check stop_event
+                event = await asyncio.wait_for(self._event_queue.get(), timeout=0.1)
+
+                # Only display public events
+                if self._is_event_public(event):
+                    formatted = formatter.format(event)
+                    if formatted.strip():
+                        self._write(formatted)
+
+            except asyncio.TimeoutError:
+                # No event yet, continue waiting
+                continue
+
+    def _start_event_display(self) -> None:
+        """Start the event display background task."""
+        self._stop_event.clear()
+        self._display_task = asyncio.create_task(self._display_events_task())
+
+    async def _stop_event_display(self) -> None:
+        """Stop the event display background task."""
+        if self._display_task is not None:
+            self._stop_event.set()
+            await self._display_task
+            self._display_task = None
+
+    # ========================================================================
+
     def __init__(self, seed: int, human_seat: int, log_file: str = "game_log.txt"):
         super().__init__()
         self.seed = seed
@@ -144,6 +273,13 @@ class WerewolfUI(App):
         self._current_list_view: Optional[ListView] = None
         self._current_input: Optional[Input] = None
         self._game_task: Optional[asyncio.Task] = None
+        # Event display infrastructure
+        self._event_queue: asyncio.Queue = asyncio.Queue()
+        self._display_task: Optional[asyncio.Task] = None
+        self._stop_event: asyncio.Event = asyncio.Event()
+        self._roles_secret: dict[int, str] = {}
+        self._current_day: int = 1
+        self._game: Any = None  # Reference to WerewolfGame for state access
 
     def compose(self) -> ComposeResult:
         yield Static(f"WEREWOLF - Your Seat: {self.seat} (Seed: {self.seed})", id="header")
@@ -358,6 +494,9 @@ class WerewolfUI(App):
             # Show role in the log
             self._write(f"\n{reveal_role_text(self.seat, players[self.seat].role)}")
 
+            # Store roles_secret for event formatter
+            self._roles_secret = {seat: player.role.value for seat, player in players.items()}
+
             # Create human participant
             human_participant = TextualParticipant(self.seat, self)
 
@@ -369,14 +508,25 @@ class WerewolfUI(App):
                 else:
                     participants[seat] = create_stub_player(seed=self.seed + seat)
 
+            # Create event callback for real-time display
+            event_callback = self._create_event_callback()
+
+            # Start event display task
+            self._start_event_display()
+
             # Run game
             game = WerewolfGame(
                 players=players,
                 participants=participants,
                 seed=self.seed,
+                event_callback=event_callback,
             )
+            self._game = game
 
             event_log, winner = await game.run()
+
+            # Stop event display task
+            await self._stop_event_display()
 
             # Show result in UI
             self._write("")

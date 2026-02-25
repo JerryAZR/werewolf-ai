@@ -104,8 +104,17 @@ def validate_victory(
                 "severity": "error",
             })
 
-    # A.5: Tie when both conditions met simultaneously
-    if not werewolves_alive and not villagers_alive:
+    # A.5: Tie when both conditions met simultaneously:
+    # - Werewolf condition: all villagers dead OR all gods dead
+    # - Villager condition: all werewolves dead
+    # Tie = werewolves dead AND (villagers dead OR gods dead)
+    werewolves_dead = not werewolves_alive
+    villagers_dead = not villagers_alive
+    gods_dead = not gods_alive
+
+    tie_condition = werewolves_dead and (villagers_dead or gods_dead)
+
+    if tie_condition:
         if is_over and declared_winner != "TIE":
             violations.append({
                 "rule_id": "A.5",
